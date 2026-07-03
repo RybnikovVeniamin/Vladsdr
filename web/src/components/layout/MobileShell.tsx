@@ -19,7 +19,7 @@ export function MobileShell({
   hideBottomNav,
 }: MobileShellProps) {
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <header
         className={cn(
           'sticky top-0 z-40 border-b px-4 py-3',

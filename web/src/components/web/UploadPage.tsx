@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
   SelectContent,
@@ -34,6 +33,14 @@ const PROFILE_PEOPLE: { id: PersonId; name: string }[] = [
   { id: 'vlad', name: 'Vlad' },
   { id: 'karina', name: 'Karina' },
 ]
+
+const ALLOWED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024
+
+function audioExtension(filename: string): string | null {
+  const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase()
+  return ALLOWED_AUDIO_EXTENSIONS.includes(ext) ? ext : null
+}
 
 export function UploadPage() {
   const songs = useAppStore((s) => s.songs)
@@ -57,8 +64,13 @@ export function UploadPage() {
 
   const onFile = (file: File | undefined) => {
     if (!file) return
-    if (!file.type.startsWith('audio/')) {
-      toast.error('Please pick an audio file')
+    const ext = audioExtension(file.name)
+    if (!ext) {
+      toast.error(`Use one of: ${ALLOWED_AUDIO_EXTENSIONS.join(', ')}`)
+      return
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      toast.error('File is too large (max 20 MB)')
       return
     }
     setPendingFile(file)
@@ -253,21 +265,30 @@ export function UploadPage() {
           <CardTitle className="text-base">Upload sound</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">
+            MP3, WAV, M4A, OGG, FLAC, or AAC — up to 20 MB each.
+          </p>
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             className={cn(
-              'flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground transition-colors hover:bg-white/60',
+              'flex min-h-28 w-full min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border-2 border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground transition-colors hover:bg-white/60',
               glassSurfaceSubtle,
             )}
           >
-            <UploadIcon className="size-8" />
-            {pendingFile ? pendingFile.name : 'Tap to choose audio file'}
+            <UploadIcon className="size-8 shrink-0" />
+            {pendingFile ? (
+              <span className="w-full truncate text-center" title={pendingFile.name}>
+                {pendingFile.name}
+              </span>
+            ) : (
+              'Tap to choose audio file'
+            )}
           </button>
           <input
             ref={fileRef}
             type="file"
-            accept="audio/*"
+            accept=".mp3,.wav,.m4a,.ogg,.flac,.aac,audio/*"
             className="hidden"
             onChange={(e) => onFile(e.target.files?.[0])}
           />
@@ -276,8 +297,9 @@ export function UploadPage() {
             <Label htmlFor="song-name">Song name</Label>
             <Input
               id="song-name"
-              className="min-h-12"
+              className="min-h-12 truncate"
               value={name}
+              title={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My alarm song"
             />
@@ -316,31 +338,29 @@ export function UploadPage() {
               No uploads yet. Add a song above, then pick it in Alarm.
             </p>
           ) : (
-            <ScrollArea className="max-h-80">
-              <div className="flex flex-col gap-2 pr-2">
-                {uploaded.map((song) => (
-                  <div
-                    key={song.id}
-                    className={cn('flex items-center gap-3 rounded-lg border p-3', glassSurfaceSubtle)}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{song.name}</p>
-                      <Badge variant="secondary" className="mt-1 capitalize">
-                        {song.category}
-                      </Badge>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 text-destructive"
-                      onClick={() => setDeleteId(song.id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+            <div className="flex flex-col gap-2">
+              {uploaded.map((song) => (
+                <div
+                  key={song.id}
+                  className={cn('flex items-center gap-3 rounded-lg border p-3', glassSurfaceSubtle)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{song.name}</p>
+                    <Badge variant="secondary" className="mt-1 capitalize">
+                      {song.category}
+                    </Badge>
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 text-destructive"
+                    onClick={() => setDeleteId(song.id)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

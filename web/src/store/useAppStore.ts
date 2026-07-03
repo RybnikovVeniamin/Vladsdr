@@ -557,7 +557,7 @@ export const useAppStore = create<AppStore>()(
       },
       partialize: (s): PersistedStore => ({
         alarms: s.alarms,
-        songs: s.songs,
+        songs: s.songs.map(({ id, name, category }) => ({ id, name, category })),
         avatars: s.avatars,
         backgroundImage: s.backgroundImage,
         pomodoro: s.pomodoro,

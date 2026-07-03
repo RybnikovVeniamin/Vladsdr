@@ -49,7 +49,7 @@ ssh vladsdr@Vlad-brodyaga.local
 sudo apt update
 sudo apt install -y python3-flask python3-luma.oled python3-pil \
                     python3-rpi.gpio fonts-dejavu-core espeak-ng \
-                    alsa-utils mpg123
+                    alsa-utils mpg123 ffmpeg
 ```
 
 (The luma/PIL/GPIO/espeak packages are already there if the demos from
@@ -132,9 +132,9 @@ with `{"error": "..."}`.
 `repeatDays` index 0 = Sunday … 6 = Saturday (same as the web app).
 
 Song files live in `~/.config/vlad-device/songs/` (metadata in `songs.json`).
-Supported formats: MP3, WAV, M4A, OGG, FLAC, AAC. Playback uses `aplay` (WAV)
-or `mpg123` (MP3) through the I2S speaker; espeak is the fallback if no song
-is set or the file is missing.
+Supported formats: MP3, WAV, M4A, OGG, FLAC, AAC (max 20 MB). Playback uses
+`ffplay` (from **ffmpeg** — all listed formats), else `aplay` (WAV) or `mpg123`
+(MP3). Espeak is the fallback if no song is set or playback fails.
 
 ## Development without the Pi
 

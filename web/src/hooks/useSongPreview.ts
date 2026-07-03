@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { playbackUrlForSong } from '@/lib/songPlayback'
+import { songAudioUrl } from '@/lib/deviceApi'
 import { useAppStore } from '@/store/useAppStore'
 
 type PreviewSong = {
@@ -76,6 +77,22 @@ export function useSongPreview() {
         .play()
         .then(() => setIsPlaying(true))
         .catch(() => {
+          const fallback =
+            deviceOnline && src === song.blobUrl ? songAudioUrl(song.id) : null
+          if (fallback) {
+            const retry = new Audio(fallback)
+            retry.volume = volume / 100
+            audioRef.current = retry
+            retry.addEventListener('ended', onEnded)
+            retry
+              .play()
+              .then(() => setIsPlaying(true))
+              .catch(() => {
+                onEnded()
+                toast.error('Could not play audio')
+              })
+            return
+          }
           onEnded()
           toast.error('Could not play audio')
         })
