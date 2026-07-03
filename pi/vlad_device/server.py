@@ -153,6 +153,48 @@ def create_app(controller, webroot: Path | None = None) -> Flask:
         path = controller.api_song_audio_path(song_id)
         return send_from_directory(path.parent, path.name, mimetype=None, as_attachment=False)
 
+    @app.get("/api/appearance")
+    def get_appearance():
+        return jsonify(controller.api_appearance())
+
+    @app.post("/api/avatars/<person>")
+    def post_avatar(person: str):
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            raise ValueError("file is required")
+        data = upload.read()
+        appearance = controller.api_upsert_avatar(person, data, upload.filename)
+        return jsonify(appearance)
+
+    @app.delete("/api/avatars/<person>")
+    def delete_avatar(person: str):
+        appearance = controller.api_delete_avatar(person)
+        return jsonify(appearance)
+
+    @app.get("/api/avatars/<person>")
+    def get_avatar(person: str):
+        path = controller.api_avatar_path(person)
+        return send_from_directory(path.parent, path.name, mimetype=None, as_attachment=False)
+
+    @app.post("/api/background")
+    def post_background():
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            raise ValueError("file is required")
+        data = upload.read()
+        appearance = controller.api_upsert_background(data, upload.filename)
+        return jsonify(appearance)
+
+    @app.delete("/api/background")
+    def delete_background():
+        appearance = controller.api_delete_background()
+        return jsonify(appearance)
+
+    @app.get("/api/background")
+    def get_background():
+        path = controller.api_background_path()
+        return send_from_directory(path.parent, path.name, mimetype=None, as_attachment=False)
+
     if has_webroot:
 
         @app.get("/")

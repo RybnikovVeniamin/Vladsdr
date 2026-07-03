@@ -9,6 +9,12 @@ export interface PersonAvatars {
   karina: string | null
 }
 
+/** Device-side timestamps — used to know when to re-download synced photos. */
+export interface AppearanceVersions {
+  avatars: Record<PersonId, number | null>
+  background: number | null
+}
+
 export type DeviceScreen =
   | 'clock'
   | 'menu'

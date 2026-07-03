@@ -22,7 +22,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PersonAvatar } from '@/components/web/PersonAvatar'
-import { deleteSongOnDevice, uploadSongToDevice } from '@/lib/deviceApi'
+import {
+  deleteAvatarOnDevice,
+  deleteBackgroundOnDevice,
+  deleteSongOnDevice,
+  uploadAvatarToDevice,
+  uploadBackgroundToDevice,
+  uploadSongToDevice,
+} from '@/lib/deviceApi'
+import { resolveAvatarUrl, resolveBackgroundUrl } from '@/lib/appearanceUrls'
 import { readImageAsAvatarDataUrl } from '@/lib/imageAvatar'
 import { readImageAsBackgroundDataUrl } from '@/lib/imageBackground'
 import { cn, glassSurfaceSubtle } from '@/lib/utils'
@@ -50,6 +58,7 @@ export function UploadPage() {
   const deleteSong = useAppStore((s) => s.deleteSong)
   const setAvatar = useAppStore((s) => s.setAvatar)
   const setBackgroundImage = useAppStore((s) => s.setBackgroundImage)
+  const setAppearanceVersions = useAppStore((s) => s.setAppearanceVersions)
 
   const fileRef = useRef<HTMLInputElement>(null)
   const avatarFileRef = useRef<HTMLInputElement>(null)
@@ -61,6 +70,7 @@ export function UploadPage() {
   const [avatarTarget, setAvatarTarget] = useState<PersonId | null>(null)
 
   const deviceOnline = useAppStore((s) => s.deviceOnline)
+  const remoteAppearance = useAppStore((s) => s.remote?.appearance)
 
   const onFile = (file: File | undefined) => {
     if (!file) return
@@ -124,7 +134,20 @@ export function UploadPage() {
     try {
       const dataUrl = await readImageAsAvatarDataUrl(file)
       setAvatar(avatarTarget, dataUrl)
-      toast.success(`${avatarTarget === 'vlad' ? 'Vlad' : 'Karina'}'s photo updated`)
+      if (deviceOnline) {
+        const sent = await uploadAvatarToDevice(avatarTarget, dataUrl)
+        if (sent) {
+          setAppearanceVersions({
+            avatars: { vlad: sent.avatars.vlad, karina: sent.avatars.karina },
+            background: sent.background,
+          })
+          toast.success(`${avatarTarget === 'vlad' ? 'Vlad' : 'Karina'}'s photo saved on device`)
+        } else {
+          toast.error('Saved here, but could not reach the device')
+        }
+      } else {
+        toast.success(`${avatarTarget === 'vlad' ? 'Vlad' : 'Karina'}'s photo updated`)
+      }
     } catch {
       toast.error('Please pick a photo (JPG, PNG, etc.)')
     } finally {
@@ -138,7 +161,20 @@ export function UploadPage() {
     try {
       const dataUrl = await readImageAsBackgroundDataUrl(file)
       setBackgroundImage(dataUrl)
-      toast.success('Background photo updated')
+      if (deviceOnline) {
+        const sent = await uploadBackgroundToDevice(dataUrl)
+        if (sent) {
+          setAppearanceVersions({
+            avatars: { vlad: sent.avatars.vlad, karina: sent.avatars.karina },
+            background: sent.background,
+          })
+          toast.success('Background photo saved on device')
+        } else {
+          toast.error('Saved here, but could not reach the device')
+        }
+      } else {
+        toast.success('Background photo updated')
+      }
     } catch {
       toast.error('Please pick a photo (JPG, PNG, etc.)')
     } finally {
@@ -147,6 +183,11 @@ export function UploadPage() {
   }
 
   const uploaded = songs
+  const backgroundPreview = resolveBackgroundUrl(
+    backgroundImage,
+    deviceOnline,
+    remoteAppearance,
+  )
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
@@ -166,10 +207,10 @@ export function UploadPage() {
               glassSurfaceSubtle,
             )}
           >
-            {backgroundImage ? (
+            {backgroundPreview ? (
               <>
                 <img
-                  src={backgroundImage}
+                  src={backgroundPreview}
                   alt="Current app background"
                   className="absolute inset-0 size-full object-cover opacity-60"
                 />
@@ -191,11 +232,22 @@ export function UploadPage() {
             className="hidden"
             onChange={(e) => onBackgroundFile(e.target.files?.[0])}
           />
-          {backgroundImage && (
+          {backgroundPreview && (
             <Button
               variant="ghost"
               className="min-h-10 text-destructive"
-              onClick={() => {
+              onClick={async () => {
+                if (deviceOnline) {
+                  const sent = await deleteBackgroundOnDevice()
+                  if (!sent) {
+                    toast.error('Could not delete on device')
+                    return
+                  }
+                  setAppearanceVersions({
+                    avatars: { vlad: sent.avatars.vlad, karina: sent.avatars.karina },
+                    background: sent.background,
+                  })
+                }
                 setBackgroundImage(null)
                 toast.success('Background photo removed')
               }}
@@ -220,7 +272,15 @@ export function UploadPage() {
               key={person.id}
               className={cn('flex items-center gap-3 rounded-lg border p-3', glassSurfaceSubtle)}
             >
-              <PersonAvatar name={person.name} avatarUrl={avatars[person.id]} />
+              <PersonAvatar
+                name={person.name}
+                avatarUrl={resolveAvatarUrl(
+                  person.id,
+                  avatars[person.id],
+                  deviceOnline,
+                  remoteAppearance,
+                )}
+              />
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{person.name}</p>
                 <p className="text-sm text-muted-foreground">
@@ -239,7 +299,18 @@ export function UploadPage() {
                   <Button
                     variant="ghost"
                     className="min-h-10 text-destructive"
-                    onClick={() => {
+                    onClick={async () => {
+                      if (deviceOnline) {
+                        const sent = await deleteAvatarOnDevice(person.id)
+                        if (!sent) {
+                          toast.error('Could not delete on device')
+                          return
+                        }
+                        setAppearanceVersions({
+                          avatars: { vlad: sent.avatars.vlad, karina: sent.avatars.karina },
+                          background: sent.background,
+                        })
+                      }
                       setAvatar(person.id, null)
                       toast.success(`${person.name}'s photo removed`)
                     }}

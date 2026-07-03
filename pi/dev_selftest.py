@@ -425,6 +425,29 @@ def test_song_api():
     expect(snap["songs"] == [], "song removed from library")
 
 
+def test_appearance_api():
+    print("appearance upload/delete API")
+    controller, _, _, state_file = make(datetime(2026, 7, 2, 12, 0, 0))
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    appearance = controller.api_upsert_avatar("vlad", png, "vlad.png")
+    expect(appearance["avatars"]["vlad"] is not None, "avatar timestamp stored")
+    expect(controller.api_avatar_path("vlad") is not None, "avatar file stored")
+    snap = controller.snapshot()
+    expect(snap["appearance"]["avatars"]["vlad"] is not None, "avatar in snapshot")
+    appearance = controller.api_upsert_background(png, "bg.png")
+    expect(appearance["background"] is not None, "background timestamp stored")
+    expect(controller.api_background_path() is not None, "background file stored")
+    controller.api_delete_avatar("vlad")
+    controller.api_delete_background()
+    snap = controller.snapshot()
+    expect(snap["appearance"]["avatars"]["vlad"] is None, "avatar removed")
+    expect(snap["appearance"]["background"] is None, "background removed")
+
+
 def test_renderer_smoke():
     print("renderer smoke test (needs PIL)")
     try:
@@ -491,6 +514,7 @@ def main() -> int:
         test_api_ring_control,
         test_alarm_song_playback,
         test_song_api,
+        test_appearance_api,
         test_persistence_roundtrip,
         test_volume_api_and_menu,
         test_renderer_smoke,

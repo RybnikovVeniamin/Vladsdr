@@ -1,18 +1,30 @@
 import { useEffect } from 'react'
 import {
+  avatarDeviceUrl,
+  backgroundDeviceUrl,
+  type AppearanceState,
+} from '@/lib/appearanceUrls'
+import {
+  deleteAvatarOnDevice,
+  deleteBackgroundOnDevice,
   fetchDeviceState,
+  fetchImageAsDataUrl,
   pushAlarms,
   pushPomodoroSettings,
   pushTimerDuration,
   pushVolume,
+  syncLocalAppearanceToDevice,
   syncLocalSongsToDevice,
+  uploadAvatarToDevice,
+  uploadBackgroundToDevice,
 } from '@/lib/deviceApi'
 import { useAppStore } from '@/store/useAppStore'
-import type { PomodoroSettings, Song } from '@/types'
+import type { AppearanceVersions, PersonId, PomodoroSettings, Song } from '@/types'
 
 const POLL_MS = 3000
 const LOCAL_EDIT_GRACE_MS = 3000
 const PUSH_DEBOUNCE_MS = 400
+const PERSONS: PersonId[] = ['vlad', 'karina']
 
 function samePomodoro(a: PomodoroSettings, b: PomodoroSettings) {
   return (
@@ -47,6 +59,117 @@ function clampVolume(value: unknown): number {
   return Math.min(100, Math.max(0, n))
 }
 
+function normalizeAppearance(remote: unknown): AppearanceState {
+  const raw = (remote ?? {}) as Partial<AppearanceState>
+  const avatars = (raw.avatars ?? {}) as Partial<Record<PersonId, number | null>>
+  return {
+    avatars: {
+      vlad: typeof avatars.vlad === 'number' ? avatars.vlad : null,
+      karina: typeof avatars.karina === 'number' ? avatars.karina : null,
+    },
+    background: typeof raw.background === 'number' ? raw.background : null,
+  }
+}
+
+function appearanceVersionsFromRemote(remote: AppearanceState): AppearanceVersions {
+  return {
+    avatars: { ...remote.avatars },
+    background: remote.background,
+  }
+}
+
+async function pullAppearanceFromDevice(
+  remote: AppearanceState,
+  localVersions: AppearanceVersions,
+  localAvatars: Record<PersonId, string | null>,
+  localBackground: string | null,
+): Promise<{
+  avatars?: Record<PersonId, string | null>
+  backgroundImage?: string | null
+  appearanceVersions?: AppearanceVersions
+}> {
+  const patch: {
+    avatars?: Record<PersonId, string | null>
+    backgroundImage?: string | null
+    appearanceVersions?: AppearanceVersions
+  } = {}
+  const nextAvatars = { ...localAvatars }
+  let avatarsChanged = false
+
+  for (const person of PERSONS) {
+    const remoteTs = remote.avatars[person]
+    const localTs = localVersions.avatars[person]
+    if (remoteTs && remoteTs !== localTs) {
+      const dataUrl = await fetchImageAsDataUrl(avatarDeviceUrl(person, remoteTs))
+      if (dataUrl) {
+        nextAvatars[person] = dataUrl
+        avatarsChanged = true
+      }
+    } else if (!remoteTs && (localAvatars[person] || localTs)) {
+      nextAvatars[person] = null
+      avatarsChanged = true
+    }
+  }
+
+  if (avatarsChanged) patch.avatars = nextAvatars
+
+  const remoteBg = remote.background
+  const localBgTs = localVersions.background
+  if (remoteBg && remoteBg !== localBgTs) {
+    const dataUrl = await fetchImageAsDataUrl(backgroundDeviceUrl(remoteBg))
+    if (dataUrl) patch.backgroundImage = dataUrl
+  } else if (!remoteBg && (localBackground || localBgTs)) {
+    patch.backgroundImage = null
+  }
+
+  const nextVersions = appearanceVersionsFromRemote(remote)
+  if (
+    nextVersions.avatars.vlad !== localVersions.avatars.vlad ||
+    nextVersions.avatars.karina !== localVersions.avatars.karina ||
+    nextVersions.background !== localVersions.background
+  ) {
+    patch.appearanceVersions = nextVersions
+  }
+
+  return patch
+}
+
+async function pushAppearanceToDevice(
+  avatars: Record<PersonId, string | null>,
+  backgroundImage: string | null,
+  remote: AppearanceState,
+): Promise<AppearanceVersions | null> {
+  let latest = { ...remote }
+
+  for (const person of PERSONS) {
+    const local = avatars[person]
+    const onDevice = latest.avatars[person]
+    if (local && !onDevice) {
+      const sent = await uploadAvatarToDevice(person, local)
+      if (sent) latest = sent
+    } else if (!local && onDevice) {
+      const sent = await deleteAvatarOnDevice(person)
+      if (sent) latest = sent
+    } else if (local && onDevice) {
+      const sent = await uploadAvatarToDevice(person, local)
+      if (sent) latest = sent
+    }
+  }
+
+  if (backgroundImage && !latest.background) {
+    const sent = await uploadBackgroundToDevice(backgroundImage)
+    if (sent) latest = sent
+  } else if (!backgroundImage && latest.background) {
+    const sent = await deleteBackgroundOnDevice()
+    if (sent) latest = sent
+  } else if (backgroundImage && latest.background) {
+    const sent = await uploadBackgroundToDevice(backgroundImage)
+    if (sent) latest = sent
+  }
+
+  return appearanceVersionsFromRemote(latest)
+}
+
 /**
  * Keeps settings in sync with the Pi when it is reachable on the LAN.
  * Local edits are pushed (debounced); the device is the source of truth
@@ -58,7 +181,13 @@ export function useDeviceSync() {
     let applyingRemote = false
     let lastLocalEditAt = 0
     let pushTimeout: number | null = null
-    const pending = { alarms: false, pomodoro: false, timer: false, volume: false }
+    const pending = {
+      alarms: false,
+      pomodoro: false,
+      timer: false,
+      volume: false,
+      appearance: false,
+    }
 
     const flushPush = async () => {
       pushTimeout = null
@@ -80,6 +209,20 @@ export function useDeviceSync() {
       if (pending.volume) {
         jobs.push({ key: 'volume', run: () => pushVolume(state.volume) })
       }
+      if (pending.appearance) {
+        jobs.push({
+          key: 'appearance',
+          run: async () => {
+            const remote = normalizeAppearance(state.remote?.appearance)
+            const versions = await pushAppearanceToDevice(
+              state.avatars,
+              state.backgroundImage,
+              remote,
+            )
+            if (versions) state.setAppearanceVersions(versions)
+          },
+        })
+      }
       if (jobs.length === 0) return
 
       for (const job of jobs) pending[job.key] = false
@@ -89,8 +232,9 @@ export function useDeviceSync() {
 
       let alarmsFailed = false
       results.forEach((result, index) => {
-        if (result !== null) return
         const key = jobs[index].key
+        if (key === 'appearance') return
+        if (result !== null) return
         pending[key] = true
         if (key === 'alarms') alarmsFailed = true
       })
@@ -127,6 +271,10 @@ export function useDeviceSync() {
         pending.volume = true
         touched = true
       }
+      if (state.avatars !== prev.avatars || state.backgroundImage !== prev.backgroundImage) {
+        pending.appearance = true
+        touched = true
+      }
       if (touched) {
         lastLocalEditAt = Date.now()
         if (state.deviceOnline) schedulePush()
@@ -145,6 +293,7 @@ export function useDeviceSync() {
       applyingRemote = true
       try {
         const remoteSongs = Array.isArray(remote.songs) ? remote.songs : []
+        const remoteAppearance = normalizeAppearance(remote.appearance)
         if (Date.now() - lastLocalEditAt > LOCAL_EDIT_GRACE_MS) {
           const patch: Record<string, unknown> = {}
           if (!songsMatch(remoteSongs, store.songs)) {
@@ -174,6 +323,15 @@ export function useDeviceSync() {
           ) {
             patch.volume = clampVolume(remoteVolume)
           }
+
+          const appearancePatch = await pullAppearanceFromDevice(
+            remoteAppearance,
+            store.appearanceVersions,
+            store.avatars,
+            store.backgroundImage,
+          )
+          Object.assign(patch, appearancePatch)
+
           if (Object.keys(patch).length > 0) {
             useAppStore.setState(patch)
           }
@@ -192,6 +350,12 @@ export function useDeviceSync() {
         if (missingOnDevice.length > 0) {
           void syncLocalSongsToDevice(missingOnDevice)
         }
+
+        void syncLocalAppearanceToDevice(
+          latest.avatars,
+          latest.backgroundImage,
+          remoteAppearance,
+        )
       } finally {
         applyingRemote = false
       }

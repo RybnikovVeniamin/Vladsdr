@@ -1,9 +1,11 @@
-import type { Alarm, PomodoroRuntime, PomodoroSettings, Song, SongCategory, TimerState } from '@/types'
+import type { Alarm, PersonId, PomodoroRuntime, PomodoroSettings, Song, SongCategory, TimerState } from '@/types'
+import type { AppearanceState } from '@/lib/appearanceUrls'
 
 /** Mirrors GET /api/state from pi/vlad_device/server.py */
 export interface DeviceApiState {
   now: string
   nowMs: number
+  appearance?: AppearanceState
   songs: Song[]
   alarms: Alarm[]
   pomodoro: PomodoroSettings
@@ -183,6 +185,102 @@ export function pushTimerDuration(durationSec: number): Promise<DeviceApiState |
 
 export function pushVolume(volume: number): Promise<DeviceApiState | null> {
   return request<DeviceApiState>('/api/volume', 'PUT', { volume })
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(',')
+  const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg'
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+function extensionForImageBlob(blob: Blob): string {
+  const type = blob.type.toLowerCase()
+  if (type.includes('png')) return '.png'
+  if (type.includes('webp')) return '.webp'
+  if (type.includes('gif')) return '.gif'
+  return '.jpg'
+}
+
+export function uploadAvatarToDevice(
+  person: PersonId,
+  dataUrl: string,
+): Promise<AppearanceState | null> {
+  const blob = dataUrlToBlob(dataUrl)
+  const form = new FormData()
+  form.append('file', blob, `${person}${extensionForImageBlob(blob)}`)
+  return requestForm<AppearanceState>(`/api/avatars/${person}`, form)
+}
+
+export function deleteAvatarOnDevice(person: PersonId): Promise<AppearanceState | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  return fetch(`${getDeviceBaseUrl()}/api/avatars/${person}`, {
+    method: 'DELETE',
+    signal: controller.signal,
+  })
+    .then((response) => (response.ok ? (response.json() as Promise<AppearanceState>) : null))
+    .catch(() => null)
+    .finally(() => clearTimeout(timeout))
+}
+
+export function uploadBackgroundToDevice(dataUrl: string): Promise<AppearanceState | null> {
+  const blob = dataUrlToBlob(dataUrl)
+  const form = new FormData()
+  form.append('file', blob, `background${extensionForImageBlob(blob)}`)
+  return requestForm<AppearanceState>('/api/background', form)
+}
+
+export function deleteBackgroundOnDevice(): Promise<AppearanceState | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  return fetch(`${getDeviceBaseUrl()}/api/background`, {
+    method: 'DELETE',
+    signal: controller.signal,
+  })
+    .then((response) => (response.ok ? (response.json() as Promise<AppearanceState>) : null))
+    .catch(() => null)
+    .finally(() => clearTimeout(timeout))
+}
+
+export async function fetchImageAsDataUrl(url: string): Promise<string | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    return await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export async function syncLocalAppearanceToDevice(
+  avatars: Record<PersonId, string | null>,
+  backgroundImage: string | null,
+  remote: AppearanceState | null | undefined,
+): Promise<void> {
+  const remoteAvatars = remote?.avatars ?? { vlad: null, karina: null }
+  const persons: PersonId[] = ['vlad', 'karina']
+  for (const person of persons) {
+    const local = avatars[person]
+    if (local && !remoteAvatars[person]) {
+      await uploadAvatarToDevice(person, local)
+    }
+  }
+  if (backgroundImage && !remote?.background) {
+    await uploadBackgroundToDevice(backgroundImage)
+  }
 }
 
 export type DeviceAction =

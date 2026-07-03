@@ -15,6 +15,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+from .appearance import AppearanceStore
 from .songs import SongLibrary
 from .state import (
     POMODORO_PRESETS,
@@ -58,12 +59,13 @@ class NullRinger:
 
 
 class Controller:
-    def __init__(self, state_path: Path, ringer=None, now_fn=datetime.now, songs=None):
+    def __init__(self, state_path: Path, ringer=None, now_fn=datetime.now, songs=None, appearance=None):
         self._lock = threading.RLock()
         self._now = now_fn
         self.ringer = ringer or NullRinger()
         self._persistence = Persistence(state_path)
         self._songs = songs or SongLibrary(state_path.parent)
+        self._appearance = appearance or AppearanceStore(state_path.parent)
 
         self.alarms, self.pomodoro, timer_duration, self.volume = self._persistence.load()
         self.pomodoro_rt = PomodoroRuntime()
@@ -732,6 +734,40 @@ class Controller:
                 raise ValueError("song not found")
             return path
 
+    def api_appearance(self) -> dict:
+        with self._lock:
+            return self._appearance.snapshot()
+
+    def api_upsert_avatar(self, person: str, data: bytes, filename: str) -> dict:
+        with self._lock:
+            return self._appearance.upsert_avatar(person, data, filename)
+
+    def api_delete_avatar(self, person: str) -> dict:
+        with self._lock:
+            return self._appearance.delete_avatar(person)
+
+    def api_avatar_path(self, person: str):
+        with self._lock:
+            path = self._appearance.get_avatar_path(person)
+            if path is None:
+                raise ValueError("avatar not found")
+            return path
+
+    def api_upsert_background(self, data: bytes, filename: str) -> dict:
+        with self._lock:
+            return self._appearance.upsert_background(data, filename)
+
+    def api_delete_background(self) -> dict:
+        with self._lock:
+            return self._appearance.delete_background()
+
+    def api_background_path(self):
+        with self._lock:
+            path = self._appearance.get_background_path()
+            if path is None:
+                raise ValueError("background not found")
+            return path
+
     # -------------------------------------------------------------- snapshot
 
     def _items_for_screen(self) -> list[str]:
@@ -773,6 +809,7 @@ class Controller:
             return {
                 "now": now.isoformat(timespec="seconds"),
                 "nowMs": int(epoch * 1000),
+                "appearance": self._appearance.snapshot(),
                 "songs": self._songs.list_songs(),
                 "alarms": [a.to_dict() for a in self.alarms],
                 "pomodoro": self.pomodoro.to_dict(),

@@ -20,6 +20,7 @@ import { PersonCard } from '@/components/web/PersonCard'
 import { SongList } from '@/components/web/SongList'
 import { VolumeControl } from '@/components/web/VolumeControl'
 import { formatRepeatSummary, normalizeRepeatDays } from '@/lib/alarmRepeat'
+import { resolveAvatarUrl } from '@/lib/appearanceUrls'
 import { formatClock, songsForCategory } from '@/lib/format'
 import { cn, glassSurfaceSubtle } from '@/lib/utils'
 import { useSongPreview } from '@/hooks/useSongPreview'
@@ -31,6 +32,8 @@ export function AlarmPage() {
   const alarms = useAppStore((s) => s.alarms)
   const songs = useAppStore((s) => s.songs)
   const avatars = useAppStore((s) => s.avatars)
+  const deviceOnline = useAppStore((s) => s.deviceOnline)
+  const remoteAppearance = useAppStore((s) => s.remote?.appearance)
   const addAlarm = useAppStore((s) => s.addAlarm)
   const updateAlarm = useAppStore((s) => s.updateAlarm)
   const deleteAlarm = useAppStore((s) => s.deleteAlarm)
@@ -76,7 +79,7 @@ export function AlarmPage() {
         <p className="text-sm text-muted-foreground">Tap a name to browse songs</p>
         <PersonCard
           name="Vlad"
-          avatarUrl={avatars.vlad}
+          avatarUrl={resolveAvatarUrl('vlad', avatars.vlad, deviceOnline, remoteAppearance)}
           onClick={() => {
             setCategory('vlad')
             setView('song-list')
@@ -84,7 +87,7 @@ export function AlarmPage() {
         />
         <PersonCard
           name="Karina"
-          avatarUrl={avatars.karina}
+          avatarUrl={resolveAvatarUrl('karina', avatars.karina, deviceOnline, remoteAppearance)}
           onClick={() => {
             setCategory('karina')
             setView('song-list')

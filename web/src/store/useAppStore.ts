@@ -8,6 +8,7 @@ import type {
   DeviceState,
   PersonAvatars,
   PersonId,
+  AppearanceVersions,
   PomodoroRuntime,
   PomodoroSettings,
   RunStatus,
@@ -26,6 +27,7 @@ interface AppStore {
   songs: Song[]
   avatars: PersonAvatars
   backgroundImage: string | null
+  appearanceVersions: AppearanceVersions
   pomodoro: PomodoroSettings
   pomodoroRuntime: PomodoroRuntime
   timer: TimerState
@@ -46,6 +48,7 @@ interface AppStore {
   deleteSong: (id: string) => void
   setAvatar: (person: PersonId, dataUrl: string | null) => void
   setBackgroundImage: (dataUrl: string | null) => void
+  setAppearanceVersions: (versions: AppearanceVersions) => void
 
   startPomodoro: () => void
   pausePomodoro: () => void
@@ -69,6 +72,7 @@ interface PersistedStore {
   songs: Song[]
   avatars: PersonAvatars
   backgroundImage: string | null
+  appearanceVersions: AppearanceVersions
   pomodoro: PomodoroSettings
   timer: TimerState
   volume: number
@@ -76,6 +80,10 @@ interface PersistedStore {
 
 function defaultAvatars(): PersonAvatars {
   return { vlad: null, karina: null }
+}
+
+function defaultAppearanceVersions(): AppearanceVersions {
+  return { avatars: { vlad: null, karina: null }, background: null }
 }
 
 const defaultPomodoroRuntime: PomodoroRuntime = {
@@ -145,6 +153,7 @@ export const useAppStore = create<AppStore>()(
       songs: [],
       avatars: defaultAvatars(),
       backgroundImage: null,
+      appearanceVersions: defaultAppearanceVersions(),
       pomodoro: { workMin: 25, breakMin: 5, longBreakMin: 15, rounds: 4 },
       pomodoroRuntime: { ...defaultPomodoroRuntime },
       timer: initialTimer(),
@@ -245,6 +254,8 @@ export const useAppStore = create<AppStore>()(
         })),
 
       setBackgroundImage: (dataUrl) => set({ backgroundImage: dataUrl }),
+
+      setAppearanceVersions: (versions) => set({ appearanceVersions: versions }),
 
       startPomodoro: () => {
         const { pomodoro } = get()
@@ -500,7 +511,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'vlad-brodyaga-store',
-      version: 5,
+      version: 6,
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Record<string, unknown>
         if (!Array.isArray(p.alarms) && p.alarm && typeof p.alarm === 'object') {
@@ -528,6 +539,9 @@ export const useAppStore = create<AppStore>()(
         if (version < 5 && p.volume === undefined) {
           p.volume = 80
         }
+        if (version < 6 && !p.appearanceVersions) {
+          p.appearanceVersions = defaultAppearanceVersions()
+        }
         return p as unknown as PersistedStore
       },
       merge: (persisted, current) => {
@@ -550,6 +564,7 @@ export const useAppStore = create<AppStore>()(
             saved.backgroundImage !== undefined
               ? saved.backgroundImage
               : current.backgroundImage,
+          appearanceVersions: saved.appearanceVersions ?? current.appearanceVersions,
           pomodoro: { ...current.pomodoro, ...saved.pomodoro },
           volume: clampInt(saved.volume, 0, 100, current.volume),
           timer: { durationSec, remainingSec: durationSec, status: 'idle' },
@@ -560,6 +575,7 @@ export const useAppStore = create<AppStore>()(
         songs: s.songs.map(({ id, name, category }) => ({ id, name, category })),
         avatars: s.avatars,
         backgroundImage: s.backgroundImage,
+        appearanceVersions: s.appearanceVersions,
         pomodoro: s.pomodoro,
         volume: s.volume,
         timer: {
