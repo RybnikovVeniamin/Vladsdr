@@ -36,6 +36,7 @@ What we want to achieve:
 | Path | What it is |
 |------|------------|
 | `CLAUDE.md` | This file — project context for humans + AI |
+| `GIFT.md` | User guide for the gift recipient (daily use, new Wi‑Fi, moving) |
 | `FEATURES.md` | Detailed feature description of the product |
 | `assets/` | Wiring reference photos (OLED diagram, GPIO pin guide) |
 | `scripts/` | Small Python hardware tests/demos that run **on the Pi** |
