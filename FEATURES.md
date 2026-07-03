@@ -248,6 +248,14 @@ a new tab so configuration and the simulator can run side by side.
 Toast notifications (`sonner`) confirm saves and surface errors
 (e.g. non-audio file, empty song name).
 
+**Active-device banner** (`DeviceActiveBanner.tsx`, rendered above every
+tab in `App.tsx`): while the device is online, anything ringing or running
+on it — ringing/snoozing alarm, running/paused/done timer, running/paused
+pomodoro — appears as a strip with a **Turn off** button (plus **Snooze**
+for a ringing alarm), so all three modes can be shut off from the computer
+regardless of the open tab. The tab that owns a mode is skipped there (it
+already shows its detailed on-device card).
+
 ---
 
 ## 5. Sound library

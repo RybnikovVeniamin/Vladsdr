@@ -24,6 +24,7 @@ Open the settings URL in Chrome and use DevTools → iPhone size to preview mobi
 - **Timer** — presets + custom minutes **and seconds**; custom finish sound; run locally or on the device
 - **Upload** — add custom sounds for alarm / timer / pomodoro (stored in browser)
 - **Device preview** (`/device.html`) — 128×64 OLED simulator with virtual knob and red button (ringing: red = off, knob click = snooze)
+- **Active-device banner** — on every tab: whatever is ringing or running on the physical device (alarm / timer / pomodoro) shows at the top with a **Turn off** button (+ Snooze for the alarm)
 
 Settings persist in browser localStorage and are pushed to the Pi when connected.
 
