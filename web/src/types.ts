@@ -49,6 +49,8 @@ export interface PomodoroSettings {
   breakMin: number
   longBreakMin: number
   rounds: number
+  /** Custom sound played on phase changes / completion; null = spoken cue. */
+  songId?: string | null
 }
 
 export interface PomodoroPreset extends PomodoroSettings {
@@ -67,6 +69,8 @@ export interface TimerState {
   durationSec: number
   remainingSec: number
   status: RunStatus
+  /** Custom sound played when the timer finishes; null = default beep/voice. */
+  songId?: string | null
 }
 
 export interface DeviceState {

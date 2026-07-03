@@ -65,6 +65,11 @@ def normalize_repeat_days(days) -> list[bool]:
     return [bool(d) for d in days]
 
 
+def _opt_song_id(value) -> str | None:
+    _require(value is None or isinstance(value, str), "songId must be a string or null")
+    return value or None
+
+
 @dataclass
 class Alarm:
     id: str
@@ -107,6 +112,7 @@ class PomodoroSettings:
     break_min: int = 5
     long_break_min: int = 15
     rounds: int = 4
+    song_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -114,6 +120,7 @@ class PomodoroSettings:
             "breakMin": self.break_min,
             "longBreakMin": self.long_break_min,
             "rounds": self.rounds,
+            "songId": self.song_id,
         }
 
     def update(self, data: dict) -> None:
@@ -126,6 +133,8 @@ class PomodoroSettings:
             self.long_break_min = _int_in(data["longBreakMin"], 1, 60, "longBreakMin")
         if "rounds" in data:
             self.rounds = _int_in(data["rounds"], 1, 12, "rounds")
+        if "songId" in data:
+            self.song_id = _opt_song_id(data["songId"])
 
 
 @dataclass
@@ -149,12 +158,14 @@ class TimerState:
     duration_sec: int = 5 * 60
     remaining_sec: int = 5 * 60
     status: str = "idle"  # idle | running | paused | done
+    song_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
             "durationSec": self.duration_sec,
             "remainingSec": self.remaining_sec,
             "status": self.status,
+            "songId": self.song_id,
         }
 
 
@@ -225,15 +236,16 @@ class Persistence:
     def __init__(self, path: Path):
         self.path = Path(path)
 
-    def load(self) -> tuple[list[Alarm], PomodoroSettings, int, int]:
+    def load(self) -> tuple[list[Alarm], PomodoroSettings, int, str | None, int]:
         alarms = default_alarms()
         pomodoro = PomodoroSettings()
         timer_duration = 5 * 60
+        timer_song_id: str | None = None
         volume = DEFAULT_VOLUME
         try:
             raw = json.loads(self.path.read_text())
         except (OSError, ValueError):
-            return alarms, pomodoro, timer_duration, volume
+            return alarms, pomodoro, timer_duration, timer_song_id, volume
         try:
             if isinstance(raw.get("alarms"), list):
                 alarms = parse_alarms(raw["alarms"])
@@ -248,23 +260,28 @@ class Persistence:
         except ValueError:
             pass
         try:
+            timer_song_id = _opt_song_id((raw.get("timer") or {}).get("songId"))
+        except ValueError:
+            pass
+        try:
             if "volume" in raw:
                 volume = validate_volume(raw["volume"])
         except ValueError:
             pass
-        return alarms, pomodoro, timer_duration, volume
+        return alarms, pomodoro, timer_duration, timer_song_id, volume
 
     def save(
         self,
         alarms: list[Alarm],
         pomodoro: PomodoroSettings,
         timer_duration: int,
+        timer_song_id: str | None,
         volume: int,
     ) -> None:
         data = {
             "alarms": [a.to_dict() for a in alarms],
             "pomodoro": pomodoro.to_dict(),
-            "timer": {"durationSec": timer_duration},
+            "timer": {"durationSec": timer_duration, "songId": timer_song_id},
             "volume": volume,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)

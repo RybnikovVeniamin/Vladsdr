@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DeviceRuntimeCard } from '@/components/web/DeviceRuntimeCard'
+import { SongPickerCard } from '@/components/web/SongPickerCard'
 import { Stepper } from '@/components/web/Stepper'
 import { VolumeControl } from '@/components/web/VolumeControl'
 import { TIMER_PRESET_MINUTES } from '@/data/presets'
@@ -10,6 +11,7 @@ import { useAppStore } from '@/store/useAppStore'
 export function TimerPage() {
   const timer = useAppStore((s) => s.timer)
   const setTimerDuration = useAppStore((s) => s.setTimerDuration)
+  const setTimerSong = useAppStore((s) => s.setTimerSong)
   const startTimer = useAppStore((s) => s.startTimer)
   const pauseTimer = useAppStore((s) => s.pauseTimer)
   const resetTimer = useAppStore((s) => s.resetTimer)
@@ -105,6 +107,13 @@ export function TimerPage() {
           )}
         </CardContent>
       </Card>
+
+      <SongPickerCard
+        title="Timer sound"
+        emptyLabel="Default beep"
+        selectedId={timer.songId ?? null}
+        onSelect={(songId) => setTimerSong(songId)}
+      />
     </div>
   )
 }

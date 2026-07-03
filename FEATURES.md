@@ -113,6 +113,11 @@ steppers.
 4. When a `long_break` finishes → runtime resets to idle and the device
    returns to the `clock` screen.
 
+**Session sound** (`PomodoroSettings.songId`): pick a custom song (Vlad /
+Karina cards, same picker as alarms) to play on each phase change and at
+completion; when unset the Pi speaks the phase cue (espeak placeholder).
+`Clear` restores the spoken default.
+
 **Controls**:
 
 - Web page: **Pause / Resume** and **Stop** buttons appear once the session
@@ -136,10 +141,13 @@ on-device Timer menu. Data shape: `TimerState`.
   the OLED, disabled button on the web).
 - **Start / Pause / Reset** — knob click pauses/resumes on the device; red
   long press resets.
+- **Timer sound** (`TimerState.songId`): pick a custom song (same Vlad /
+  Karina picker) to play when the timer finishes; `Clear` restores the
+  default beep.
 
 When the countdown hits 0: the web simulator marks `done` and returns to
-`clock`; the Pi shows a dedicated `DONE!` screen and beeps (espeak
-placeholder, auto-stops after ~75 s) until any button is pressed.
+`clock`; the Pi shows a dedicated `DONE!` screen and rings the chosen song
+(or espeak placeholder, auto-stops after ~75 s) until any button is pressed.
 
 OLED display: large `M:SS` countdown, footer `TIMER` / `PAUSED`.
 
@@ -261,7 +269,8 @@ file.
 - Category selector: **Vlad**, **Karina**, or **Both**.
 - Upload creates a blob URL and adds a `Song` with id `song-<timestamp>`.
 - Uploads list supports deletion via a confirmation dialog. Deleting a song
-  clears `songId` on every alarm that used it.
+  clears `songId` on every alarm that used it, plus the timer and pomodoro
+  if they referenced it.
 
 ### 5.3 Selection filter
 

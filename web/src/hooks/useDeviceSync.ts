@@ -11,7 +11,7 @@ import {
   fetchImageAsDataUrl,
   pushAlarms,
   pushPomodoroSettings,
-  pushTimerDuration,
+  pushTimer,
   pushVolume,
   syncLocalAppearanceToDevice,
   syncLocalSongsToDevice,
@@ -31,7 +31,8 @@ function samePomodoro(a: PomodoroSettings, b: PomodoroSettings) {
     a.workMin === b.workMin &&
     a.breakMin === b.breakMin &&
     a.longBreakMin === b.longBreakMin &&
-    a.rounds === b.rounds
+    a.rounds === b.rounds &&
+    (a.songId ?? null) === (b.songId ?? null)
   )
 }
 
@@ -203,7 +204,7 @@ export function useDeviceSync() {
       if (pending.timer && state.timer.durationSec > 0) {
         jobs.push({
           key: 'timer',
-          run: () => pushTimerDuration(state.timer.durationSec),
+          run: () => pushTimer(state.timer.durationSec, state.timer.songId ?? null),
         })
       }
       if (pending.volume) {
@@ -263,7 +264,10 @@ export function useDeviceSync() {
         pending.pomodoro = true
         touched = true
       }
-      if (state.timer.durationSec !== prev.timer.durationSec) {
+      if (
+        state.timer.durationSec !== prev.timer.durationSec ||
+        (state.timer.songId ?? null) !== (prev.timer.songId ?? null)
+      ) {
         pending.timer = true
         touched = true
       }
@@ -307,12 +311,14 @@ export function useDeviceSync() {
           }
           if (
             store.timer.status === 'idle' &&
-            remote.timer.durationSec !== store.timer.durationSec
+            (remote.timer.durationSec !== store.timer.durationSec ||
+              (remote.timer.songId ?? null) !== (store.timer.songId ?? null))
           ) {
             patch.timer = {
               durationSec: remote.timer.durationSec,
               remainingSec: remote.timer.durationSec,
               status: 'idle',
+              songId: remote.timer.songId ?? null,
             }
           }
           const remoteVolume = remote.volume

@@ -179,8 +179,11 @@ export function pushPomodoroSettings(
   return request<DeviceApiState>('/api/pomodoro', 'PUT', settings)
 }
 
-export function pushTimerDuration(durationSec: number): Promise<DeviceApiState | null> {
-  return request<DeviceApiState>('/api/timer', 'PUT', { durationSec })
+export function pushTimer(
+  durationSec: number,
+  songId: string | null,
+): Promise<DeviceApiState | null> {
+  return request<DeviceApiState>('/api/timer', 'PUT', { durationSec, songId })
 }
 
 export function pushVolume(volume: number): Promise<DeviceApiState | null> {
