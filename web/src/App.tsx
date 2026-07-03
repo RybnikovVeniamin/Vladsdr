@@ -3,6 +3,7 @@ import { useDeviceSync } from '@/hooks/useDeviceSync'
 import { AppBackground } from '@/components/layout/AppBackground'
 import { MobileShell } from '@/components/layout/MobileShell'
 import { AlarmPage } from '@/components/web/AlarmPage'
+import { DeviceActiveBanner } from '@/components/web/DeviceActiveBanner'
 import { PomodoroPage } from '@/components/web/PomodoroPage'
 import { TimerPage } from '@/components/web/TimerPage'
 import { UploadPage } from '@/components/web/UploadPage'
@@ -33,6 +34,7 @@ export default function App() {
     <>
       <AppBackground />
       <MobileShell activeTab={activeTab} onTabChange={setActiveTab}>
+        <DeviceActiveBanner />
         <MainContent />
       </MobileShell>
     </>
