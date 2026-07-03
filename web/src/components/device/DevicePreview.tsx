@@ -11,6 +11,7 @@ interface DevicePreviewProps {
 export function DevicePreview({ embedded }: DevicePreviewProps) {
   const tick = useAppStore((s) => s.tick)
   const triggerAlarmNow = useAppStore((s) => s.triggerAlarmNow)
+  const deviceOnline = useAppStore((s) => s.deviceOnline)
 
   useEffect(() => {
     const id = setInterval(tick, 1000)
@@ -27,7 +28,11 @@ export function DevicePreview({ embedded }: DevicePreviewProps) {
     >
       <div className="text-center">
         <h2 className="text-lg font-semibold">Device preview</h2>
-        <p className="text-sm text-muted-foreground">128×64 OLED simulator</p>
+        <p className="text-sm text-muted-foreground">
+          {deviceOnline
+            ? 'Live view from Vlad_brodyaga'
+            : '128×64 OLED simulator (offline)'}
+        </p>
       </div>
 
       <OledScreen />

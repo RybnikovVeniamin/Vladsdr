@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { seedSongs } from '@/data/seedSongs'
 import { ALL_DAYS, isAlarmDayToday, normalizeRepeatDays } from '@/lib/alarmRepeat'
 import { todayKey } from '@/lib/format'
 import type { DeviceApiState } from '@/lib/deviceApi'
@@ -30,6 +29,7 @@ interface AppStore {
   pomodoro: PomodoroSettings
   pomodoroRuntime: PomodoroRuntime
   timer: TimerState
+  volume: number
   device: DeviceState
   deviceOnline: boolean
   remote: DeviceApiState | null
@@ -40,8 +40,9 @@ interface AppStore {
   deleteAlarm: (id: string) => void
   updatePomodoroSettings: (settings: Partial<PomodoroSettings>) => void
   setTimerDuration: (durationSec: number) => void
+  setVolume: (volume: number) => void
 
-  addSong: (name: string, category: SongCategory, blobUrl: string) => void
+  addSong: (name: string, category: SongCategory, blobUrl: string) => string
   deleteSong: (id: string) => void
   setAvatar: (person: PersonId, dataUrl: string | null) => void
   setBackgroundImage: (dataUrl: string | null) => void
@@ -70,6 +71,7 @@ interface PersistedStore {
   backgroundImage: string | null
   pomodoro: PomodoroSettings
   timer: TimerState
+  volume: number
 }
 
 function defaultAvatars(): PersonAvatars {
@@ -105,7 +107,7 @@ function defaultAlarms(): Alarm[] {
       hour: 7,
       minute: 30,
       repeatDays: [...ALL_DAYS],
-      songId: seedSongs[0]?.id ?? null,
+      songId: null,
     },
   ]
 }
@@ -140,12 +142,13 @@ export const useAppStore = create<AppStore>()(
     (set, get) => ({
       activeTab: 'alarm',
       alarms: defaultAlarms(),
-      songs: seedSongs,
+      songs: [],
       avatars: defaultAvatars(),
       backgroundImage: null,
       pomodoro: { workMin: 25, breakMin: 5, longBreakMin: 15, rounds: 4 },
       pomodoroRuntime: { ...defaultPomodoroRuntime },
       timer: initialTimer(),
+      volume: 80,
       device: initialDevice(),
       deviceOnline: false,
       remote: null,
@@ -209,18 +212,24 @@ export const useAppStore = create<AppStore>()(
           },
         })),
 
-      addSong: (name, category, blobUrl) =>
+      setVolume: (volume) =>
+        set({ volume: clampInt(volume, 0, 100, 80) }),
+
+      addSong: (name, category, blobUrl) => {
+        const id = `song-${Date.now()}`
         set((s) => ({
           songs: [
             ...s.songs,
             {
-              id: `song-${Date.now()}`,
+              id,
               name,
               category,
               blobUrl,
             },
           ],
-        })),
+        }))
+        return id
+      },
 
       deleteSong: (id) =>
         set((s) => ({
@@ -491,7 +500,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'vlad-brodyaga-store',
-      version: 3,
+      version: 5,
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Record<string, unknown>
         if (!Array.isArray(p.alarms) && p.alarm && typeof p.alarm === 'object') {
@@ -505,6 +514,19 @@ export const useAppStore = create<AppStore>()(
         }
         if (version < 3 && p.backgroundImage === undefined) {
           p.backgroundImage = null
+        }
+        if (version < 4) {
+          if (Array.isArray(p.songs)) {
+            p.songs = (p.songs as Song[]).filter((song) => !song.id.startsWith('seed-'))
+          }
+          if (Array.isArray(p.alarms)) {
+            p.alarms = (p.alarms as Alarm[]).map((alarm) =>
+              alarm.songId?.startsWith('seed-') ? { ...alarm, songId: null } : alarm,
+            )
+          }
+        }
+        if (version < 5 && p.volume === undefined) {
+          p.volume = 80
         }
         return p as unknown as PersistedStore
       },
@@ -529,6 +551,7 @@ export const useAppStore = create<AppStore>()(
               ? saved.backgroundImage
               : current.backgroundImage,
           pomodoro: { ...current.pomodoro, ...saved.pomodoro },
+          volume: clampInt(saved.volume, 0, 100, current.volume),
           timer: { durationSec, remainingSec: durationSec, status: 'idle' },
         }
       },
@@ -538,6 +561,7 @@ export const useAppStore = create<AppStore>()(
         avatars: s.avatars,
         backgroundImage: s.backgroundImage,
         pomodoro: s.pomodoro,
+        volume: s.volume,
         timer: {
           durationSec: s.timer.durationSec,
           remainingSec: s.timer.durationSec,

@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DeviceRuntimeCard } from '@/components/web/DeviceRuntimeCard'
 import { Stepper } from '@/components/web/Stepper'
+import { VolumeControl } from '@/components/web/VolumeControl'
 import { TIMER_PRESET_MINUTES } from '@/data/presets'
 import { formatDuration } from '@/lib/format'
 import { useAppStore } from '@/store/useAppStore'
@@ -20,6 +21,7 @@ export function TimerPage() {
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
       <DeviceRuntimeCard mode="timer" />
+      <VolumeControl compact />
 
       {isActive && (
         <Card className="border-primary/30 bg-primary/15">

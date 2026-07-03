@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { playbackUrlForSong } from '@/lib/songPlayback'
+import { useAppStore } from '@/store/useAppStore'
+
 type PreviewSong = {
   id: string
   blobUrl?: string
@@ -8,6 +11,8 @@ type PreviewSong = {
 }
 
 export function useSongPreview() {
+  const deviceOnline = useAppStore((s) => s.deviceOnline)
+  const volume = useAppStore((s) => s.volume)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -38,8 +43,9 @@ export function useSongPreview() {
 
   const togglePlay = useCallback(
     (song: PreviewSong) => {
-      if (!song.blobUrl) {
-        toast.info(`"${song.name}" is a sample — upload a real file to play it`)
+      const src = playbackUrlForSong(song, deviceOnline)
+      if (!src) {
+        toast.info(`"${song.name}" is on the device only — connect to preview it here`)
         return
       }
 
@@ -54,7 +60,8 @@ export function useSongPreview() {
         audioRef.current = null
       }
 
-      const audio = new Audio(song.blobUrl)
+      const audio = new Audio(src)
+      audio.volume = volume / 100
       audioRef.current = audio
       setPlayingId(song.id)
 
@@ -73,8 +80,14 @@ export function useSongPreview() {
           toast.error('Could not play audio')
         })
     },
-    [playingId, isPlaying, pause, resume],
+    [playingId, isPlaying, pause, resume, deviceOnline, volume],
   )
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100
+    }
+  }, [volume])
 
   useEffect(() => () => stop(), [stop])
 

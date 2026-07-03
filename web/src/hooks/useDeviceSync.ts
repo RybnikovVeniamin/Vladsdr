@@ -4,9 +4,11 @@ import {
   pushAlarms,
   pushPomodoroSettings,
   pushTimerDuration,
+  pushVolume,
+  syncLocalSongsToDevice,
 } from '@/lib/deviceApi'
 import { useAppStore } from '@/store/useAppStore'
-import type { PomodoroSettings } from '@/types'
+import type { PomodoroSettings, Song } from '@/types'
 
 const POLL_MS = 3000
 const LOCAL_EDIT_GRACE_MS = 3000
@@ -21,6 +23,30 @@ function samePomodoro(a: PomodoroSettings, b: PomodoroSettings) {
   )
 }
 
+function songsMatch(a: Song[], b: Song[]) {
+  if (a.length !== b.length) return false
+  return a.every(
+    (song, index) =>
+      song.id === b[index]?.id &&
+      song.name === b[index]?.name &&
+      song.category === b[index]?.category,
+  )
+}
+
+function mergeSongsFromDevice(local: Song[], remote: Song[]): Song[] {
+  const localById = new Map(local.map((song) => [song.id, song]))
+  return remote.map((song) => ({
+    ...song,
+    blobUrl: localById.get(song.id)?.blobUrl,
+  }))
+}
+
+function clampVolume(value: unknown): number {
+  const n = typeof value === 'number' ? Math.trunc(value) : Number.NaN
+  if (Number.isNaN(n)) return 80
+  return Math.min(100, Math.max(0, n))
+}
+
 /**
  * Keeps settings in sync with the Pi when it is reachable on the LAN.
  * Local edits are pushed (debounced); the device is the source of truth
@@ -32,30 +58,48 @@ export function useDeviceSync() {
     let applyingRemote = false
     let lastLocalEditAt = 0
     let pushTimeout: number | null = null
-    const pending = { alarms: false, pomodoro: false, timer: false }
+    const pending = { alarms: false, pomodoro: false, timer: false, volume: false }
 
     const flushPush = async () => {
       pushTimeout = null
       const state = useAppStore.getState()
-      const jobs: Promise<unknown>[] = []
+      const jobs: Array<{ key: keyof typeof pending; run: () => Promise<unknown> }> = []
+
       if (pending.alarms) {
-        pending.alarms = false
-        jobs.push(pushAlarms(state.alarms))
+        jobs.push({ key: 'alarms', run: () => pushAlarms(state.alarms) })
       }
       if (pending.pomodoro) {
-        pending.pomodoro = false
-        jobs.push(pushPomodoroSettings(state.pomodoro))
+        jobs.push({ key: 'pomodoro', run: () => pushPomodoroSettings(state.pomodoro) })
       }
-      if (pending.timer) {
-        pending.timer = false
-        if (state.timer.durationSec > 0) {
-          jobs.push(pushTimerDuration(state.timer.durationSec))
-        }
+      if (pending.timer && state.timer.durationSec > 0) {
+        jobs.push({
+          key: 'timer',
+          run: () => pushTimerDuration(state.timer.durationSec),
+        })
+      }
+      if (pending.volume) {
+        jobs.push({ key: 'volume', run: () => pushVolume(state.volume) })
       }
       if (jobs.length === 0) return
-      const results = await Promise.all(jobs)
-      if (!disposed && results.some((r) => r === null)) {
+
+      for (const job of jobs) pending[job.key] = false
+
+      const results = await Promise.all(jobs.map((job) => job.run()))
+      if (disposed) return
+
+      let alarmsFailed = false
+      results.forEach((result, index) => {
+        if (result !== null) return
+        const key = jobs[index].key
+        pending[key] = true
+        if (key === 'alarms') alarmsFailed = true
+      })
+
+      // Only a full settings push failure means the device is unreachable.
+      if (alarmsFailed) {
         useAppStore.getState().setDeviceStatus(false, null)
+      } else if (pending.volume && useAppStore.getState().deviceOnline) {
+        pushTimeout = window.setTimeout(flushPush, PUSH_DEBOUNCE_MS)
       }
     }
 
@@ -79,6 +123,10 @@ export function useDeviceSync() {
         pending.timer = true
         touched = true
       }
+      if (state.volume !== prev.volume) {
+        pending.volume = true
+        touched = true
+      }
       if (touched) {
         lastLocalEditAt = Date.now()
         if (state.deviceOnline) schedulePush()
@@ -96,8 +144,12 @@ export function useDeviceSync() {
 
       applyingRemote = true
       try {
+        const remoteSongs = Array.isArray(remote.songs) ? remote.songs : []
         if (Date.now() - lastLocalEditAt > LOCAL_EDIT_GRACE_MS) {
           const patch: Record<string, unknown> = {}
+          if (!songsMatch(remoteSongs, store.songs)) {
+            patch.songs = mergeSongsFromDevice(store.songs, remoteSongs)
+          }
           if (JSON.stringify(remote.alarms) !== JSON.stringify(store.alarms)) {
             patch.alarms = remote.alarms
           }
@@ -114,11 +166,32 @@ export function useDeviceSync() {
               status: 'idle',
             }
           }
+          const remoteVolume = remote.volume
+          if (
+            typeof remoteVolume === 'number' &&
+            clampVolume(remoteVolume) !== store.volume &&
+            !pending.volume
+          ) {
+            patch.volume = clampVolume(remoteVolume)
+          }
           if (Object.keys(patch).length > 0) {
             useAppStore.setState(patch)
           }
         }
         store.setDeviceStatus(true, remote)
+
+        if (pending.volume && !pushTimeout) {
+          schedulePush()
+        }
+
+        const latest = useAppStore.getState()
+        const remoteIds = new Set(remoteSongs.map((song) => song.id))
+        const missingOnDevice = latest.songs.filter(
+          (song) => song.blobUrl && !remoteIds.has(song.id),
+        )
+        if (missingOnDevice.length > 0) {
+          void syncLocalSongsToDevice(missingOnDevice)
+        }
       } finally {
         applyingRemote = false
       }

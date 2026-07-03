@@ -16,6 +16,9 @@ from pathlib import Path
 
 SNOOZE_SEC = 5 * 60
 LONG_PRESS_SEC = 0.8
+DEFAULT_VOLUME = 80
+MIN_VOLUME = 0
+MAX_VOLUME = 100
 
 ALL_DAYS = [True] * 7
 WEEKDAYS = [False, True, True, True, True, True, False]
@@ -162,6 +165,10 @@ def validate_timer_duration(value) -> int:
     return _int_in(value, 1, MAX_TIMER_SEC, "durationSec")
 
 
+def validate_volume(value) -> int:
+    return _int_in(value, MIN_VOLUME, MAX_VOLUME, "volume")
+
+
 def default_alarms() -> list[Alarm]:
     return [Alarm(id="alarm-1", enabled=True, hour=7, minute=30)]
 
@@ -218,14 +225,15 @@ class Persistence:
     def __init__(self, path: Path):
         self.path = Path(path)
 
-    def load(self) -> tuple[list[Alarm], PomodoroSettings, int]:
+    def load(self) -> tuple[list[Alarm], PomodoroSettings, int, int]:
         alarms = default_alarms()
         pomodoro = PomodoroSettings()
         timer_duration = 5 * 60
+        volume = DEFAULT_VOLUME
         try:
             raw = json.loads(self.path.read_text())
         except (OSError, ValueError):
-            return alarms, pomodoro, timer_duration
+            return alarms, pomodoro, timer_duration, volume
         try:
             if isinstance(raw.get("alarms"), list):
                 alarms = parse_alarms(raw["alarms"])
@@ -239,13 +247,25 @@ class Persistence:
             timer_duration = validate_timer_duration((raw.get("timer") or {}).get("durationSec"))
         except ValueError:
             pass
-        return alarms, pomodoro, timer_duration
+        try:
+            if "volume" in raw:
+                volume = validate_volume(raw["volume"])
+        except ValueError:
+            pass
+        return alarms, pomodoro, timer_duration, volume
 
-    def save(self, alarms: list[Alarm], pomodoro: PomodoroSettings, timer_duration: int) -> None:
+    def save(
+        self,
+        alarms: list[Alarm],
+        pomodoro: PomodoroSettings,
+        timer_duration: int,
+        volume: int,
+    ) -> None:
         data = {
             "alarms": [a.to_dict() for a in alarms],
             "pomodoro": pomodoro.to_dict(),
             "timer": {"durationSec": timer_duration},
+            "volume": volume,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".state-", suffix=".json")

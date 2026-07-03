@@ -37,7 +37,7 @@ def main() -> None:
     parser.add_argument("--state-file", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--webroot", type=Path, default=DEFAULT_WEBROOT)
     parser.add_argument("--no-hardware", action="store_true", help="run without OLED/GPIO")
-    parser.add_argument("--no-sound", action="store_true", help="disable espeak sounds")
+    parser.add_argument("--no-sound", action="store_true", help="disable alarm/timer sounds")
     args = parser.parse_args()
 
     controller = Controller(args.state_file, ringer=Ringer(enabled=not args.no_sound))

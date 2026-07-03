@@ -15,6 +15,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+from .songs import SongLibrary
 from .state import (
     POMODORO_PRESETS,
     REPEAT_CHOICES,
@@ -30,6 +31,7 @@ from .state import (
     parse_alarms,
     repeat_label,
     validate_timer_duration,
+    validate_volume,
 )
 
 MENU_ITEMS = ["Alarm", "Pomo", "Timer"]
@@ -42,7 +44,7 @@ FLASH_SEC = 2.0
 
 
 class NullRinger:
-    def start(self, kind: str) -> None:
+    def start(self, kind: str, *, song_path=None) -> None:
         pass
 
     def stop(self) -> None:
@@ -51,17 +53,22 @@ class NullRinger:
     def say(self, text: str) -> None:
         pass
 
+    def set_volume(self, volume: int) -> None:
+        pass
+
 
 class Controller:
-    def __init__(self, state_path: Path, ringer=None, now_fn=datetime.now):
+    def __init__(self, state_path: Path, ringer=None, now_fn=datetime.now, songs=None):
         self._lock = threading.RLock()
         self._now = now_fn
         self.ringer = ringer or NullRinger()
         self._persistence = Persistence(state_path)
+        self._songs = songs or SongLibrary(state_path.parent)
 
-        self.alarms, self.pomodoro, timer_duration = self._persistence.load()
+        self.alarms, self.pomodoro, timer_duration, self.volume = self._persistence.load()
         self.pomodoro_rt = PomodoroRuntime()
         self.timer = TimerState(duration_sec=timer_duration, remaining_sec=timer_duration)
+        self.ringer.set_volume(self.volume)
 
         self.screen = "clock"
         self.cursor = 0
@@ -78,7 +85,7 @@ class Controller:
     # ------------------------------------------------------------------ utils
 
     def _save(self) -> None:
-        self._persistence.save(self.alarms, self.pomodoro, self.timer.duration_sec)
+        self._persistence.save(self.alarms, self.pomodoro, self.timer.duration_sec, self.volume)
 
     def _flash(self, text: str) -> None:
         self.flash_text = text
@@ -94,6 +101,7 @@ class Controller:
             state = "on" if alarm.enabled else "off"
             items.append(f"{alarm.hour:02d}:{alarm.minute:02d} {repeat_label(alarm.repeat_days)} {state}")
         items.append("+ New alarm")
+        items.append(f"Volume {self.volume}%")
         return items
 
     def _pomo_menu_items(self) -> list[str]:
@@ -102,6 +110,7 @@ class Controller:
             items.append("Resume")
         items.extend(p["label"] for p in POMODORO_PRESETS)
         items.append("Custom")
+        items.append(f"Volume {self.volume}%")
         return items
 
     def _timer_menu_items(self) -> list[str]:
@@ -110,6 +119,7 @@ class Controller:
             items.append("Resume")
         items.extend(f"{m} min" for m in TIMER_PRESETS_MIN)
         items.append("Custom")
+        items.append(f"Volume {self.volume}%")
         return items
 
     def _repeat_choices(self, current_days: list[bool]) -> list[tuple[str, list[bool]]]:
@@ -120,6 +130,12 @@ class Controller:
 
     # ------------------------------------------------------- ringing helpers
 
+    def _alarm_song_path(self, alarm_id: str):
+        alarm = next((a for a in self.alarms if a.id == alarm_id), None)
+        if not alarm:
+            return None
+        return self._songs.get_audio_path(alarm.song_id)
+
     def _ring(self, alarm_id: str) -> None:
         if self.screen in ("pomodoro", "timer"):
             self.return_screen = self.screen
@@ -127,7 +143,7 @@ class Controller:
         self.ringing_alarm_id = alarm_id
         self.snooze_until = None
         self._goto("alarm_ringing")
-        self.ringer.start("alarm")
+        self.ringer.start("alarm", song_path=self._alarm_song_path(alarm_id))
 
     def _stop_ringing_to_previous(self) -> None:
         self.ringer.stop()
@@ -230,6 +246,29 @@ class Controller:
         }
         self._goto("timer_edit")
 
+    def _open_volume_edit(self, return_screen: str) -> None:
+        self.edit = {
+            "kind": "volume",
+            "value": self.volume,
+            "return": return_screen,
+        }
+        self._goto("volume_edit")
+
+    def _commit_volume_edit(self) -> None:
+        edit = self.edit
+        if not edit or edit.get("kind") != "volume":
+            return
+        self.volume = validate_volume(edit["value"])
+        self.ringer.set_volume(self.volume)
+        return_screen = edit.get("return", "menu")
+        self.edit = None
+        self._save()
+        self._flash("SAVED")
+        self._goto(return_screen)
+
+    def _is_volume_item(self, item: str) -> bool:
+        return item.startswith("Volume ")
+
     # -------------------------------------------------------- physical input
 
     def knob_turn(self, direction: int) -> None:
@@ -245,6 +284,8 @@ class Controller:
                 self._turn_pomo_edit(direction)
             elif self.screen == "timer_edit":
                 self._turn_timer_edit(direction)
+            elif self.screen == "volume_edit":
+                self._turn_volume_edit(direction)
 
     def _turn_alarm_edit(self, direction: int) -> None:
         edit = self.edit
@@ -278,6 +319,12 @@ class Controller:
         else:
             edit["sec"] = (edit["sec"] + direction * 5) % 60
 
+    def _turn_volume_edit(self, direction: int) -> None:
+        edit = self.edit
+        if not edit or edit.get("kind") != "volume":
+            return
+        edit["value"] = min(100, max(0, edit["value"] + direction * 5))
+
     def knob_click(self) -> None:
         with self._lock:
             screen = self.screen
@@ -301,6 +348,8 @@ class Controller:
                 self._advance_pomo_edit()
             elif screen == "timer_edit":
                 self._advance_timer_edit()
+            elif screen == "volume_edit":
+                self._commit_volume_edit()
             elif screen == "pomodoro":
                 self._toggle_pomodoro_pause()
             elif screen == "timer":
@@ -318,7 +367,11 @@ class Controller:
             self._goto("timer_menu")
 
     def _select_alarm_list(self) -> None:
-        if self.cursor < len(self.alarms):
+        items = self._alarm_list_items()
+        item = items[self.cursor % len(items)]
+        if self._is_volume_item(item):
+            self._open_volume_edit("alarm_list")
+        elif self.cursor < len(self.alarms):
             self._open_alarm_edit(self.alarms[self.cursor])
         else:
             self._open_alarm_edit(None)
@@ -328,6 +381,8 @@ class Controller:
         item = items[self.cursor % len(items)]
         if item == "Resume":
             self._goto("pomodoro")
+        elif self._is_volume_item(item):
+            self._open_volume_edit("pomo_menu")
         elif item == "Custom":
             self._open_pomo_edit()
         else:
@@ -343,6 +398,8 @@ class Controller:
         item = items[self.cursor % len(items)]
         if item == "Resume":
             self._goto("timer")
+        elif self._is_volume_item(item):
+            self._open_volume_edit("timer_menu")
         elif item == "Custom":
             self._open_timer_edit()
         else:
@@ -421,6 +478,10 @@ class Controller:
             elif screen == "timer_edit":
                 self.edit = None
                 self._goto("timer_menu")
+            elif screen == "volume_edit":
+                edit = self.edit
+                self.edit = None
+                self._goto(edit.get("return", "menu") if edit else "menu")
 
     def button_long(self) -> None:
         with self._lock:
@@ -595,6 +656,13 @@ class Controller:
                 self._goto("clock")
             self._save()
 
+    def api_set_volume(self, value) -> None:
+        volume = validate_volume(value)
+        with self._lock:
+            self.volume = volume
+            self.ringer.set_volume(volume)
+            self._save()
+
     def api_start_pomodoro(self) -> None:
         with self._lock:
             self._start_pomodoro()
@@ -639,6 +707,31 @@ class Controller:
         with self._lock:
             self._do_dismiss()
 
+    def api_list_songs(self) -> list[dict]:
+        with self._lock:
+            return self._songs.list_songs()
+
+    def api_upsert_song(self, song_id: str, name: str, category: str, data: bytes, filename: str) -> list[dict]:
+        with self._lock:
+            self._songs.upsert(song_id, name, category, data, filename)
+            return self._songs.list_songs()
+
+    def api_delete_song(self, song_id: str) -> list[dict]:
+        with self._lock:
+            self._songs.delete(song_id)
+            for alarm in self.alarms:
+                if alarm.song_id == song_id:
+                    alarm.song_id = None
+            self._save()
+            return self._songs.list_songs()
+
+    def api_song_audio_path(self, song_id: str):
+        with self._lock:
+            path = self._songs.get_audio_path(song_id)
+            if path is None:
+                raise ValueError("song not found")
+            return path
+
     # -------------------------------------------------------------- snapshot
 
     def _items_for_screen(self) -> list[str]:
@@ -680,10 +773,12 @@ class Controller:
             return {
                 "now": now.isoformat(timespec="seconds"),
                 "nowMs": int(epoch * 1000),
+                "songs": self._songs.list_songs(),
                 "alarms": [a.to_dict() for a in self.alarms],
                 "pomodoro": self.pomodoro.to_dict(),
                 "pomodoroRuntime": self.pomodoro_rt.to_dict(),
                 "timer": self.timer.to_dict(),
+                "volume": self.volume,
                 "device": {
                     "screen": self.screen,
                     "cursor": self.cursor,

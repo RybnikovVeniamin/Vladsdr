@@ -1,13 +1,30 @@
-import type { Alarm, PomodoroRuntime, PomodoroSettings, TimerState } from '@/types'
+import type { Alarm, PomodoroRuntime, PomodoroSettings, Song, SongCategory, TimerState } from '@/types'
 
 /** Mirrors GET /api/state from pi/vlad_device/server.py */
 export interface DeviceApiState {
   now: string
   nowMs: number
+  songs: Song[]
   alarms: Alarm[]
   pomodoro: PomodoroSettings
   pomodoroRuntime: PomodoroRuntime
   timer: TimerState
+  volume?: number
+  edit?: {
+    kind?: string
+    value?: number
+    field?: string
+    hour?: number
+    minute?: number
+    repeatLabel?: string
+    enabled?: boolean
+    work?: number
+    break?: number
+    long?: number
+    rounds?: number
+    min?: number
+    sec?: number
+  } | null
   device: {
     screen: string
     cursor: number
@@ -73,12 +90,85 @@ async function request<T>(
   }
 }
 
+async function requestForm<T>(path: string, form: FormData): Promise<T | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+  try {
+    const response = await fetch(`${getDeviceBaseUrl()}${path}`, {
+      method: 'POST',
+      signal: controller.signal,
+      body: form,
+    })
+    if (!response.ok) return null
+    return (await response.json()) as T
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 export function fetchDeviceState(): Promise<DeviceApiState | null> {
   return request<DeviceApiState>('/api/state')
 }
 
 export function pushAlarms(alarms: Alarm[]): Promise<DeviceApiState | null> {
   return request<DeviceApiState>('/api/alarms', 'PUT', alarms)
+}
+
+export function songAudioUrl(songId: string): string {
+  return `${getDeviceBaseUrl()}/api/songs/${encodeURIComponent(songId)}/audio`
+}
+
+export function uploadSongToDevice(
+  id: string,
+  name: string,
+  category: SongCategory,
+  file: Blob,
+  filename = 'song.mp3',
+): Promise<Song[] | null> {
+  const form = new FormData()
+  form.append('id', id)
+  form.append('name', name)
+  form.append('category', category)
+  form.append('file', file, filename)
+  return requestForm<Song[]>('/api/songs', form)
+}
+
+export function deleteSongOnDevice(id: string): Promise<Song[] | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  return fetch(`${getDeviceBaseUrl()}/api/songs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal: controller.signal,
+  })
+    .then((response) => (response.ok ? (response.json() as Promise<Song[]>) : null))
+    .catch(() => null)
+    .finally(() => clearTimeout(timeout))
+}
+
+export async function syncLocalSongsToDevice(songs: Song[]): Promise<void> {
+  for (const song of songs) {
+    if (!song.blobUrl) continue
+    try {
+      const blob = await fetch(song.blobUrl).then((r) => r.blob())
+      const ext = extensionForAudioBlob(blob)
+      await uploadSongToDevice(song.id, song.name, song.category, blob, `${song.id}${ext}`)
+    } catch {
+      // skip failed uploads; next poll will retry
+    }
+  }
+}
+
+function extensionForAudioBlob(blob: Blob): string {
+  const type = blob.type.toLowerCase()
+  if (type.includes('wav')) return '.wav'
+  if (type.includes('mpeg') || type.includes('mp3')) return '.mp3'
+  if (type.includes('mp4') || type.includes('m4a')) return '.m4a'
+  if (type.includes('ogg')) return '.ogg'
+  if (type.includes('flac')) return '.flac'
+  if (type.includes('aac')) return '.aac'
+  return '.mp3'
 }
 
 export function pushPomodoroSettings(
@@ -89,6 +179,10 @@ export function pushPomodoroSettings(
 
 export function pushTimerDuration(durationSec: number): Promise<DeviceApiState | null> {
   return request<DeviceApiState>('/api/timer', 'PUT', { durationSec })
+}
+
+export function pushVolume(volume: number): Promise<DeviceApiState | null> {
+  return request<DeviceApiState>('/api/volume', 'PUT', { volume })
 }
 
 export type DeviceAction =

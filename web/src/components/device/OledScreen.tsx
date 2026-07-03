@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/useAppStore'
 const W = 128
 const H = 64
 const SCALE = 4
+const LIST_ROWS = 4
 
 interface OledScreenProps {
   className?: string
@@ -15,9 +16,26 @@ export function OledScreen({ className }: OledScreenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const alarms = useAppStore((s) => s.alarms)
   const songs = useAppStore((s) => s.songs)
-  const device = useAppStore((s) => s.device)
+  const volume = useAppStore((s) => s.volume)
+  const localDevice = useAppStore((s) => s.device)
+  const deviceOnline = useAppStore((s) => s.deviceOnline)
+  const remote = useAppStore((s) => s.remote)
   const pomodoroRuntime = useAppStore((s) => s.pomodoroRuntime)
   const timer = useAppStore((s) => s.timer)
+
+  const live = deviceOnline && remote
+  const screen = live ? remote.device.screen : localDevice.screen
+  const cursor = live ? remote.device.cursor : localDevice.menuIndex
+  const items = live ? remote.device.items : []
+  const ringingAlarmId = live
+    ? remote.device.ringingAlarmId
+    : localDevice.ringingAlarmId
+  const snoozeUntil = live ? remote.device.snoozeUntil : localDevice.snoozeUntil
+  const dismissed = live ? remote.device.dismissed : localDevice.dismissed
+  const flash = live ? remote.device.flash : null
+  const nextAlarm = live ? remote.device.nextAlarm : null
+  const edit = live ? remote.edit : null
+  const displayVolume = live && typeof remote.volume === 'number' ? remote.volume : volume
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -31,7 +49,7 @@ export function OledScreen({ className }: OledScreenProps) {
     ctx.textBaseline = 'top'
 
     const now = new Date()
-    const ringingAlarm = alarms.find((a) => a.id === device.ringingAlarmId)
+    const ringingAlarm = alarms.find((a) => a.id === ringingAlarmId)
     const song = songs.find((s) => s.id === ringingAlarm?.songId)
 
     const drawCentered = (text: string, y: number, size = 12) => {
@@ -42,32 +60,74 @@ export function OledScreen({ className }: OledScreenProps) {
 
     const drawLine = (text: string, x: number, y: number, size = 10) => {
       ctx.font = `${size}px monospace`
-      ctx.fillText(text.slice(0, 16), x, y)
+      ctx.fillText(text.slice(0, 21), x, y)
     }
 
-    switch (device.screen) {
+    const drawList = (header: string, listItems: string[], listCursor: number) => {
+      drawLine(header, 2, 4, 9)
+      if (listItems.length === 0) return
+      const safeCursor = listCursor % listItems.length
+      const start = Math.min(
+        Math.max(0, safeCursor - LIST_ROWS + 1),
+        Math.max(0, listItems.length - LIST_ROWS),
+      )
+      for (let row = 0; row < LIST_ROWS; row += 1) {
+        const index = start + row
+        if (index >= listItems.length) break
+        const prefix = index === safeCursor ? '>' : ' '
+        drawLine(`${prefix} ${listItems[index]}`, 2, 13 + row * 13, 11)
+      }
+    }
+
+    switch (screen) {
       case 'clock': {
         drawCentered(formatClock(now.getHours(), now.getMinutes()), 8, 22)
-        const upcoming = nextAlarmOccurrence(alarms, device.dismissed, now)
-        if (upcoming) {
-          const sameDay = upcoming.fire.toDateString() === now.toDateString()
-          const day = sameDay ? '' : `${DAY_NAMES[upcoming.fire.getDay()]} `
+        if (flash) {
+          drawCentered(flash, 44, 12)
+          break
+        }
+        if (nextAlarm) {
+          const day = nextAlarm.isToday ? '' : `${nextAlarm.dayLabel} `
           drawCentered(
-            `ALM ${day}${formatClock(upcoming.alarm.hour, upcoming.alarm.minute)}`,
+            `ALM ${day}${formatClock(nextAlarm.hour, nextAlarm.minute)}`,
             40,
             10,
           )
         } else {
-          drawCentered('NO ALARM', 40, 10)
+          const upcoming = nextAlarmOccurrence(alarms, dismissed, now)
+          if (upcoming) {
+            const sameDay = upcoming.fire.toDateString() === now.toDateString()
+            const day = sameDay ? '' : `${DAY_NAMES[upcoming.fire.getDay()]} `
+            drawCentered(
+              `ALM ${day}${formatClock(upcoming.alarm.hour, upcoming.alarm.minute)}`,
+              40,
+              10,
+            )
+          } else {
+            drawCentered('NO ALARM', 40, 10)
+          }
         }
         break
       }
       case 'menu': {
-        drawLine('MODE', 4, 4, 10)
-        ;['Alarm', 'Pomo', 'Timer'].forEach((label, i) => {
-          const prefix = i === device.menuIndex ? '>' : ' '
-          drawLine(`${prefix} ${label}`, 4, 22 + i * 14, 11)
-        })
+        const menuItems = live ? items : ['Alarm', 'Pomo', 'Timer']
+        drawList('MODE', menuItems, cursor)
+        break
+      }
+      case 'alarm_list':
+        drawList('ALARMS', items, cursor)
+        break
+      case 'pomo_menu':
+        drawList('POMODORO', items, cursor)
+        break
+      case 'timer_menu':
+        drawList('TIMER', items, cursor)
+        break
+      case 'volume_edit': {
+        drawLine('VOLUME', 2, 4, 9)
+        const value = edit?.value ?? displayVolume
+        drawCentered(`${value}%`, 18, 22)
+        drawCentered('click = save', 50, 9)
         break
       }
       case 'alarm_ringing': {
@@ -84,8 +144,8 @@ export function OledScreen({ className }: OledScreenProps) {
         break
       }
       case 'snoozing': {
-        const left = device.snoozeUntil
-          ? Math.max(0, Math.ceil((device.snoozeUntil - Date.now()) / 1000))
+        const left = snoozeUntil
+          ? Math.max(0, Math.ceil((snoozeUntil - Date.now()) / 1000))
           : 0
         drawCentered('SNOOZE', 4, 14)
         drawCentered(formatDurationShort(left), 24, 18)
@@ -93,30 +153,50 @@ export function OledScreen({ className }: OledScreenProps) {
         break
       }
       case 'pomodoro': {
+        const rt = live ? remote.pomodoroRuntime : pomodoroRuntime
         const label =
-          pomodoroRuntime.phase === 'work'
-            ? 'WORK'
-            : pomodoroRuntime.phase === 'long_break'
-              ? 'LONG'
-              : 'BREAK'
+          rt.phase === 'work' ? 'WORK' : rt.phase === 'long_break' ? 'LONG' : 'BREAK'
         drawCentered(label, 6, 12)
-        drawCentered(formatDurationShort(pomodoroRuntime.remainingSec), 24, 20)
+        drawCentered(formatDurationShort(rt.remainingSec), 24, 20)
         const status =
-          pomodoroRuntime.status === 'paused' ? 'PAUSED' : `R${pomodoroRuntime.currentRound}`
+          rt.status === 'paused' ? 'PAUSED' : `R${rt.currentRound}`
         drawCentered(status, 50, 9)
         break
       }
-      case 'timer': {
-        drawCentered(formatDurationShort(timer.remainingSec), 12, 22)
-        drawCentered(
-          timer.status === 'paused' ? 'PAUSED' : timer.status === 'done' ? 'DONE!' : 'TIMER',
-          44,
-          10,
-        )
+      case 'timer':
+      case 'timer_done': {
+        const t = live ? remote.timer : timer
+        if (screen === 'timer_done' || t.status === 'done') {
+          drawCentered('DONE!', 8, 22)
+          drawCentered('press button', 44, 10)
+        } else {
+          drawCentered(formatDurationShort(t.remainingSec), 12, 22)
+          drawCentered(t.status === 'paused' ? 'PAUSED' : 'TIMER', 44, 10)
+        }
         break
       }
+      default:
+        drawCentered(screen, 26, 12)
+        break
     }
-  }, [alarms, device, pomodoroRuntime, songs, timer])
+  }, [
+    alarms,
+    cursor,
+    dismissed,
+    displayVolume,
+    edit,
+    flash,
+    items,
+    nextAlarm,
+    pomodoroRuntime,
+    remote,
+    ringingAlarmId,
+    screen,
+    snoozeUntil,
+    songs,
+    timer,
+    volume,
+  ])
 
   return (
     <canvas

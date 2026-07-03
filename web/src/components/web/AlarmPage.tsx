@@ -18,6 +18,7 @@ import { AlarmRepeatPicker } from '@/components/web/AlarmRepeatPicker'
 import { DeviceSyncCard } from '@/components/web/DeviceSyncCard'
 import { PersonCard } from '@/components/web/PersonCard'
 import { SongList } from '@/components/web/SongList'
+import { VolumeControl } from '@/components/web/VolumeControl'
 import { formatRepeatSummary, normalizeRepeatDays } from '@/lib/alarmRepeat'
 import { formatClock, songsForCategory } from '@/lib/format'
 import { cn, glassSurfaceSubtle } from '@/lib/utils'
@@ -236,6 +237,8 @@ export function AlarmPage() {
           </CardContent>
         </Card>
 
+        <VolumeControl compact />
+
         <Button
           variant="ghost"
           className="min-h-11 text-destructive"
@@ -267,6 +270,7 @@ export function AlarmPage() {
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
       <DeviceSyncCard />
+      <VolumeControl compact />
 
       {alarms.length === 0 && (
         <Card className="p-6 text-center text-sm text-muted-foreground">

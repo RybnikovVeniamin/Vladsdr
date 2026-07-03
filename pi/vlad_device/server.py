@@ -25,7 +25,7 @@ def create_app(controller, webroot: Path | None = None) -> Flask:
     @app.after_request
     def add_cors_headers(response):
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, PUT, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, PUT, POST, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return response
 
@@ -67,6 +67,14 @@ def create_app(controller, webroot: Path | None = None) -> Flask:
         if not isinstance(data, dict):
             raise ValueError("body must be a JSON object")
         controller.api_set_timer_duration(data.get("durationSec"))
+        return state()
+
+    @app.put("/api/volume")
+    def put_volume():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("body must be a JSON object")
+        controller.api_set_volume(data.get("volume"))
         return state()
 
     @app.post("/api/pomodoro/start")
@@ -118,6 +126,32 @@ def create_app(controller, webroot: Path | None = None) -> Flask:
     def alarm_dismiss():
         controller.api_dismiss()
         return state()
+
+    @app.get("/api/songs")
+    def get_songs():
+        return jsonify(controller.api_list_songs())
+
+    @app.post("/api/songs")
+    def post_song():
+        song_id = request.form.get("id", "").strip()
+        name = request.form.get("name", "").strip()
+        category = request.form.get("category", "both").strip()
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            raise ValueError("file is required")
+        data = upload.read()
+        songs = controller.api_upsert_song(song_id, name, category, data, upload.filename)
+        return jsonify(songs)
+
+    @app.delete("/api/songs/<song_id>")
+    def delete_song(song_id: str):
+        songs = controller.api_delete_song(song_id)
+        return jsonify(songs)
+
+    @app.get("/api/songs/<song_id>/audio")
+    def get_song_audio(song_id: str):
+        path = controller.api_song_audio_path(song_id)
+        return send_from_directory(path.parent, path.name, mimetype=None, as_attachment=False)
 
     if has_webroot:
 

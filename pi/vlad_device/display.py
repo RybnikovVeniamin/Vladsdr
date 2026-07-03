@@ -192,6 +192,12 @@ class Renderer:
         if flash:
             self._center(draw, flash, 52, self.tiny)
 
+    def _paint_volume_edit(self, draw, snap):
+        edit = snap.get("edit") or {}
+        draw.text((2, 1), "VOLUME", font=self.tiny, fill=255)
+        self._center(draw, f"{edit.get('value', 0)}%", 18, self.big)
+        self._center(draw, "click = save", 50, self.tiny)
+
     # -------------------------------------------------------------- running
 
     def _paint_pomodoro(self, draw, snap):
@@ -222,7 +228,12 @@ class Renderer:
             None,
         )
         if alarm:
-            self._center(draw, f"{alarm['hour']:02d}:{alarm['minute']:02d}", 26, self.med)
+            song = next(
+                (s for s in snap.get("songs", []) if s["id"] == alarm.get("songId")),
+                None,
+            )
+            line = song["name"][:16] if song else f"{alarm['hour']:02d}:{alarm['minute']:02d}"
+            self._center(draw, line, 26, self.med)
         self._center(draw, "red=off knob=snooze", 52, self.tiny)
 
     def _paint_snoozing(self, draw, snap):

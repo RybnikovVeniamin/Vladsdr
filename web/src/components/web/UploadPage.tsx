@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PersonAvatar } from '@/components/web/PersonAvatar'
+import { deleteSongOnDevice, uploadSongToDevice } from '@/lib/deviceApi'
 import { readImageAsAvatarDataUrl } from '@/lib/imageAvatar'
 import { readImageAsBackgroundDataUrl } from '@/lib/imageBackground'
 import { cn, glassSurfaceSubtle } from '@/lib/utils'
@@ -52,6 +53,8 @@ export function UploadPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [avatarTarget, setAvatarTarget] = useState<PersonId | null>(null)
 
+  const deviceOnline = useAppStore((s) => s.deviceOnline)
+
   const onFile = (file: File | undefined) => {
     if (!file) return
     if (!file.type.startsWith('audio/')) {
@@ -62,26 +65,41 @@ export function UploadPage() {
     if (!name) setName(file.name.replace(/\.[^.]+$/, ''))
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!pendingFile || !name.trim()) {
       toast.error('Pick a file and enter a name')
       return
     }
+    const trimmed = name.trim()
     const blobUrl = URL.createObjectURL(pendingFile)
-    addSong(name.trim(), category, blobUrl)
-    toast.success('Song uploaded')
+    const id = addSong(trimmed, category, blobUrl)
+
+    if (deviceOnline) {
+      const sent = await uploadSongToDevice(id, trimmed, category, pendingFile, pendingFile.name)
+      if (sent) toast.success('Song saved on device')
+      else toast.error('Saved here, but could not reach the device')
+    } else {
+      toast.success('Song saved — will copy to device when it is online')
+    }
+
     setName('')
     setPendingFile(null)
     setCategory('both')
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const confirmDelete = () => {
-    if (deleteId) {
-      deleteSong(deleteId)
-      toast.success('Song deleted')
-      setDeleteId(null)
+  const confirmDelete = async () => {
+    if (!deleteId) return
+    if (deviceOnline) {
+      const ok = await deleteSongOnDevice(deleteId)
+      if (!ok) {
+        toast.error('Could not delete on device')
+        return
+      }
     }
+    deleteSong(deleteId)
+    toast.success('Song deleted')
+    setDeleteId(null)
   }
 
   const openAvatarPicker = (person: PersonId) => {
@@ -116,7 +134,7 @@ export function UploadPage() {
     }
   }
 
-  const uploaded = songs.filter((s) => !s.id.startsWith('seed-'))
+  const uploaded = songs
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
@@ -295,7 +313,7 @@ export function UploadPage() {
         <CardContent>
           {uploaded.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No uploads yet. Sample songs are already available in Alarm.
+              No uploads yet. Add a song above, then pick it in Alarm.
             </p>
           ) : (
             <ScrollArea className="max-h-80">

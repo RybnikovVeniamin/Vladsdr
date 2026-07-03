@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vlad_device.controller import Controller
+from vlad_device.songs import SongLibrary
 from vlad_device.state import WEEKDAYS, WEEKENDS, next_alarm, parse_alarms
 
 FAILURES: list[str] = []
@@ -41,8 +42,9 @@ class FakeRinger:
     def __init__(self):
         self.events: list[str] = []
 
-    def start(self, kind: str) -> None:
-        self.events.append(f"start:{kind}")
+    def start(self, kind: str, *, song_path=None) -> None:
+        suffix = f":{song_path}" if song_path else ""
+        self.events.append(f"start:{kind}{suffix}")
 
     def stop(self) -> None:
         self.events.append("stop")
@@ -50,13 +52,17 @@ class FakeRinger:
     def say(self, text: str) -> None:
         self.events.append(f"say:{text}")
 
+    def set_volume(self, volume: int) -> None:
+        self.events.append(f"volume:{volume}")
+
 
 def make(dt: datetime, state_file: Path | None = None):
     clock = FakeClock(dt)
     ringer = FakeRinger()
     if state_file is None:
         state_file = Path(tempfile.mkdtemp()) / "state.json"
-    controller = Controller(state_file, ringer=ringer, now_fn=clock.now)
+    songs = SongLibrary(state_file.parent)
+    controller = Controller(state_file, ringer=ringer, now_fn=clock.now, songs=songs)
     controller.tick()  # prime the tick clock
     return controller, clock, ringer, state_file
 
@@ -87,6 +93,7 @@ def test_defaults():
     expect(snap["alarms"][0]["hour"] == 7 and snap["alarms"][0]["minute"] == 30, "default 07:30")
     expect(snap["device"]["screen"] == "clock", "starts on clock")
     expect(snap["pomodoro"] == {"workMin": 25, "breakMin": 5, "longBreakMin": 15, "rounds": 4}, "pomodoro defaults")
+    expect(snap["volume"] == 80, "default volume 80%")
     json.dumps(snap)
     expect(True, "snapshot is JSON serializable")
 
@@ -196,7 +203,7 @@ def test_pomodoro_preset_and_controls():
     expect(controller.screen == "pomo_menu", "pomodoro menu opens")
     items = controller.snapshot()["device"]["items"]
     expect(items[0].startswith("Classic"), "presets listed when idle")
-    expect(items[-1] == "Custom", "custom entry present")
+    expect("Custom" in items, "custom entry present")
     controller.knob_click()  # Classic
     expect(controller.screen == "pomodoro", "preset starts a session")
     expect(controller.pomodoro_rt.remaining_sec == 25 * 60, "classic work length applied")
@@ -240,7 +247,10 @@ def test_timer_custom_flow():
     controller.knob_turn(-1)  # wrap to Timer
     controller.knob_click()
     expect(controller.screen == "timer_menu", "timer menu opens")
-    controller.knob_turn(-1)  # wrap to Custom
+    items = controller.snapshot()["device"]["items"]
+    custom_index = items.index("Custom")
+    while controller.cursor != custom_index:
+        controller.knob_turn(1)
     controller.knob_click()
     expect(controller.screen == "timer_edit" and controller.edit["field"] == "min", "custom editor opens")
     for _ in range(5):
@@ -272,7 +282,10 @@ def test_timer_zero_guard():
     controller.knob_click()
     controller.knob_turn(-1)
     controller.knob_click()
-    controller.knob_turn(-1)
+    items = controller.snapshot()["device"]["items"]
+    custom_index = items.index("Custom")
+    while controller.cursor != custom_index:
+        controller.knob_turn(1)
     controller.knob_click()
     for _ in range(5):
         controller.knob_turn(-1)
@@ -351,13 +364,65 @@ def test_persistence_roundtrip():
     )
     controller.api_update_pomodoro({"workMin": 50})
     controller.api_set_timer_duration(90)
-    reloaded, _, _, _ = make(datetime(2026, 7, 2, 12, 0, 0), state_file=state_file)
+    controller.api_set_volume(45)
+    reloaded, _, ringer, _ = make(datetime(2026, 7, 2, 12, 0, 0), state_file=state_file)
     snap = reloaded.snapshot()
     expect(snap["alarms"] == [
         {"id": "keep", "enabled": False, "hour": 6, "minute": 45, "repeatDays": WEEKDAYS, "songId": None}
     ], "alarms survive restart")
     expect(snap["pomodoro"]["workMin"] == 50, "pomodoro settings survive restart")
     expect(snap["timer"]["durationSec"] == 90, "timer duration survives restart")
+    expect(snap["volume"] == 45, "volume survives restart")
+    expect("volume:45" in ringer.events, "ringer volume restored on load")
+
+
+def test_volume_api_and_menu():
+    print("volume api and device menu")
+    controller, _, ringer, _ = make(datetime(2026, 7, 2, 12, 0, 0))
+    controller.api_set_volume(60)
+    expect(controller.snapshot()["volume"] == 60, "api sets volume")
+    expect("volume:60" in ringer.events, "api updates ringer volume")
+    controller.knob_click()
+    controller.knob_click()
+    items = controller.snapshot()["device"]["items"]
+    expect(any(item.startswith("Volume ") for item in items), "alarm list shows volume item")
+    volume_index = next(i for i, item in enumerate(items) if item.startswith("Volume "))
+    while controller.cursor != volume_index:
+        controller.knob_turn(1)
+    controller.knob_click()
+    expect(controller.snapshot()["device"]["screen"] == "volume_edit", "volume edit screen opens")
+    controller.knob_turn(1)
+    controller.knob_turn(1)
+    controller.knob_click()
+    expect(controller.snapshot()["volume"] == 70, "device volume edit saves")
+
+
+def test_alarm_song_playback():
+    print("alarm song playback path")
+    controller, clock, ringer, state_file = make(datetime(2026, 7, 2, 12, 0, 0))
+    controller.api_upsert_song("song-1", "Morning", "vlad", b"RIFF", "tone.wav")
+    controller.api_set_alarms(
+        [{"id": "a1", "enabled": True, "hour": 7, "minute": 0, "repeatDays": [True] * 7, "songId": "song-1"}]
+    )
+    controller.api_trigger_alarm()
+    path = controller.api_song_audio_path("song-1")
+    expect(path is not None, "song file stored")
+    expect(any(str(path) in event for event in ringer.events if event.startswith("start:alarm")), "alarm rings with song file")
+
+
+def test_song_api():
+    print("song upload/delete API")
+    controller, _, _, _ = make(datetime(2026, 7, 2, 12, 0, 0))
+    controller.api_upsert_song("song-x", "Test", "both", b"RIFF", "x.wav")
+    controller.api_set_alarms(
+        [{"id": "a1", "enabled": True, "hour": 7, "minute": 0, "repeatDays": [True] * 7, "songId": "song-x"}]
+    )
+    listed = controller.api_list_songs()
+    expect(len(listed) == 1 and listed[0]["name"] == "Test", "songs listed in API")
+    controller.api_delete_song("song-x")
+    snap = controller.snapshot()
+    expect(snap["alarms"][0]["songId"] is None, "deleted song cleared from alarms")
+    expect(snap["songs"] == [], "song removed from library")
 
 
 def test_renderer_smoke():
@@ -424,7 +489,10 @@ def main() -> int:
         test_next_alarm,
         test_api_validation,
         test_api_ring_control,
+        test_alarm_song_playback,
+        test_song_api,
         test_persistence_roundtrip,
+        test_volume_api_and_menu,
         test_renderer_smoke,
     ]
     for test in tests:

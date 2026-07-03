@@ -13,7 +13,8 @@ pi/
     display.py     OLED painters (luma.oled + PIL)
     inputs.py      GPIO watcher: encoder + red button (short/long press)
     server.py      Flask JSON API + CORS + optional static web hosting
-    sound.py       espeak placeholder until buzzer/speaker are wired
+    sound.py       alarm songs via speaker + espeak fallback
+    songs.py       song file library (uploaded from the web app)
   dev_selftest.py  logic checks that run on any machine (no hardware)
   vlad-device.service  systemd unit for autostart
 ```
@@ -47,7 +48,8 @@ On-device flows:
 ssh vladsdr@Vlad-brodyaga.local
 sudo apt update
 sudo apt install -y python3-flask python3-luma.oled python3-pil \
-                    python3-rpi.gpio fonts-dejavu-core espeak-ng
+                    python3-rpi.gpio fonts-dejavu-core espeak-ng \
+                    alsa-utils mpg123
 ```
 
 (The luma/PIL/GPIO/espeak packages are already there if the demos from
@@ -122,8 +124,17 @@ with `{"error": "..."}`.
 | POST | `/api/alarm/trigger` | — | ring now (test) |
 | POST | `/api/alarm/snooze` | — | snooze 5 min |
 | POST | `/api/alarm/dismiss` | — | turn off |
+| GET | `/api/songs` | — | list wake-up songs |
+| POST | `/api/songs` | multipart: `id`, `name`, `category`, `file` | upload/replace a song |
+| DELETE | `/api/songs/<id>` | — | delete song (clears it from alarms) |
+| GET | `/api/songs/<id>/audio` | — | stream the audio file |
 
 `repeatDays` index 0 = Sunday … 6 = Saturday (same as the web app).
+
+Song files live in `~/.config/vlad-device/songs/` (metadata in `songs.json`).
+Supported formats: MP3, WAV, M4A, OGG, FLAC, AAC. Playback uses `aplay` (WAV)
+or `mpg123` (MP3) through the I2S speaker; espeak is the fallback if no song
+is set or the file is missing.
 
 ## Development without the Pi
 
@@ -137,6 +148,5 @@ Point the web dev app at a local backend with
 
 ## Still to do here
 
-- Buzzer beeps + MAX98357A speaker playback (espeak is the placeholder).
-- Songs picked in the web app don't play on the Pi yet (no file transfer).
+- Buzzer beeps for timer-done (speaker plays alarm songs today).
 - Alarms that fire while another alarm is snoozing are skipped.
