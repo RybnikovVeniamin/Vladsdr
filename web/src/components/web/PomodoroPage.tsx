@@ -1,9 +1,21 @@
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DeviceRuntimeCard } from '@/components/web/DeviceRuntimeCard'
 import { Stepper } from '@/components/web/Stepper'
+import { POMODORO_PRESETS } from '@/data/presets'
 import { formatDuration } from '@/lib/format'
 import { useAppStore } from '@/store/useAppStore'
+import type { PomodoroPreset, PomodoroSettings } from '@/types'
+
+function matchesPreset(settings: PomodoroSettings, preset: PomodoroPreset) {
+  return (
+    settings.workMin === preset.workMin &&
+    settings.breakMin === preset.breakMin &&
+    settings.longBreakMin === preset.longBreakMin &&
+    settings.rounds === preset.rounds
+  )
+}
 
 export function PomodoroPage() {
   const pomodoro = useAppStore((s) => s.pomodoro)
@@ -17,8 +29,19 @@ export function PomodoroPage() {
 
   const save = () => toast.success('Pomodoro settings saved')
 
+  const applyPreset = (preset: PomodoroPreset) => {
+    updateSettings({
+      workMin: preset.workMin,
+      breakMin: preset.breakMin,
+      longBreakMin: preset.longBreakMin,
+      rounds: preset.rounds,
+    })
+    toast.success(`${preset.label} preset applied`)
+  }
+
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
+      <DeviceRuntimeCard mode="pomodoro" />
       {isActive && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="flex flex-col items-center gap-2 py-8">
@@ -58,7 +81,29 @@ export function PomodoroPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Settings</CardTitle>
+          <CardTitle className="text-base">Presets</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-3 gap-2">
+          {POMODORO_PRESETS.map((preset) => (
+            <Button
+              key={preset.id}
+              type="button"
+              variant={matchesPreset(pomodoro, preset) ? 'default' : 'outline'}
+              className="h-auto flex-col gap-0.5 py-2.5"
+              onClick={() => applyPreset(preset)}
+            >
+              <span className="font-semibold">{preset.label}</span>
+              <span className="text-xs opacity-70">
+                {preset.workMin}/{preset.breakMin} ×{preset.rounds}
+              </span>
+            </Button>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Custom settings</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <Stepper

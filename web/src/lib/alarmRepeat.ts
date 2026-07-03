@@ -1,3 +1,6 @@
+import { todayKey } from '@/lib/format'
+import type { Alarm } from '@/types'
+
 /** Index 0 = Sunday … 6 = Saturday (matches JavaScript Date.getDay()) */
 export const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -38,4 +41,32 @@ export function formatRepeatSummary(days: boolean[]): string {
 
 export function isAlarmDayToday(days: boolean[], date = new Date()): boolean {
   return normalizeRepeatDays(days)[date.getDay()]
+}
+
+export interface NextAlarmOccurrence {
+  fire: Date
+  alarm: Alarm
+}
+
+export function nextAlarmOccurrence(
+  alarms: Alarm[],
+  dismissed: Record<string, string>,
+  now = new Date(),
+): NextAlarmOccurrence | null {
+  let best: NextAlarmOccurrence | null = null
+  const today = todayKey()
+  for (const alarm of alarms) {
+    if (!alarm.enabled) continue
+    const days = normalizeRepeatDays(alarm.repeatDays)
+    for (let offset = 0; offset <= 7; offset++) {
+      const fire = new Date(now)
+      fire.setDate(now.getDate() + offset)
+      fire.setHours(alarm.hour, alarm.minute, 0, 0)
+      if (!days[fire.getDay()]) continue
+      if (offset === 0 && (fire <= now || dismissed[alarm.id] === today)) continue
+      if (!best || fire < best.fire) best = { fire, alarm }
+      break
+    }
+  }
+  return best
 }

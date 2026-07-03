@@ -13,6 +13,9 @@ venv/
 web/node_modules/
 web/dist/
 
+# Built web app deployed to the Pi
+pi/webroot/
+
 # IDE
 .idea/
 .vscode/

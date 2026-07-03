@@ -2,6 +2,13 @@ export type Tab = 'alarm' | 'pomodoro' | 'timer' | 'upload'
 
 export type SongCategory = 'vlad' | 'karina' | 'both'
 
+export type PersonId = 'vlad' | 'karina'
+
+export interface PersonAvatars {
+  vlad: string | null
+  karina: string | null
+}
+
 export type DeviceScreen =
   | 'clock'
   | 'menu'
@@ -21,7 +28,8 @@ export interface Song {
   blobUrl?: string
 }
 
-export interface AlarmSettings {
+export interface Alarm {
+  id: string
   enabled: boolean
   hour: number
   minute: number
@@ -35,6 +43,11 @@ export interface PomodoroSettings {
   breakMin: number
   longBreakMin: number
   rounds: number
+}
+
+export interface PomodoroPreset extends PomodoroSettings {
+  id: string
+  label: string
 }
 
 export interface PomodoroRuntime {
@@ -54,5 +67,7 @@ export interface DeviceState {
   screen: DeviceScreen
   menuIndex: number
   snoozeUntil: number | null
-  dismissedDate: string | null
+  ringingAlarmId: string | null
+  /** alarmId -> YYYY-MM-DD of the day it was turned off */
+  dismissed: Record<string, string>
 }

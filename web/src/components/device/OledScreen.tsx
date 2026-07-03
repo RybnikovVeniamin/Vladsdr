@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { formatClock, formatDurationShort } from '@/lib/format'
-import { formatRepeatSummary, normalizeRepeatDays } from '@/lib/alarmRepeat'
+import { DAY_NAMES, nextAlarmOccurrence } from '@/lib/alarmRepeat'
 import { useAppStore } from '@/store/useAppStore'
 
 const W = 128
@@ -13,7 +13,7 @@ interface OledScreenProps {
 
 export function OledScreen({ className }: OledScreenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const alarm = useAppStore((s) => s.alarm)
+  const alarms = useAppStore((s) => s.alarms)
   const songs = useAppStore((s) => s.songs)
   const device = useAppStore((s) => s.device)
   const pomodoroRuntime = useAppStore((s) => s.pomodoroRuntime)
@@ -31,7 +31,8 @@ export function OledScreen({ className }: OledScreenProps) {
     ctx.textBaseline = 'top'
 
     const now = new Date()
-    const song = songs.find((s) => s.id === alarm.songId)
+    const ringingAlarm = alarms.find((a) => a.id === device.ringingAlarmId)
+    const song = songs.find((s) => s.id === ringingAlarm?.songId)
 
     const drawCentered = (text: string, y: number, size = 12) => {
       ctx.font = `${size}px monospace`
@@ -47,14 +48,17 @@ export function OledScreen({ className }: OledScreenProps) {
     switch (device.screen) {
       case 'clock': {
         drawCentered(formatClock(now.getHours(), now.getMinutes()), 8, 22)
-        if (alarm.enabled) {
-          drawCentered(`ALM ${formatClock(alarm.hour, alarm.minute)}`, 38, 10)
-          const repeat = formatRepeatSummary(normalizeRepeatDays(alarm.repeatDays))
-          if (repeat !== 'Every day') {
-            drawCentered(repeat.slice(0, 16), 50, 8)
-          }
+        const upcoming = nextAlarmOccurrence(alarms, device.dismissed, now)
+        if (upcoming) {
+          const sameDay = upcoming.fire.toDateString() === now.toDateString()
+          const day = sameDay ? '' : `${DAY_NAMES[upcoming.fire.getDay()]} `
+          drawCentered(
+            `ALM ${day}${formatClock(upcoming.alarm.hour, upcoming.alarm.minute)}`,
+            40,
+            10,
+          )
         } else {
-          drawCentered('NO ALARM', 38, 10)
+          drawCentered('NO ALARM', 40, 10)
         }
         break
       }
@@ -68,16 +72,24 @@ export function OledScreen({ className }: OledScreenProps) {
       }
       case 'alarm_ringing': {
         drawCentered('WAKE UP!', 6, 14)
-        drawCentered(song?.name ?? 'Alarm', 28, 10)
-        drawCentered('btn=snooze', 48, 9)
+        drawCentered(
+          song?.name ??
+            (ringingAlarm
+              ? formatClock(ringingAlarm.hour, ringingAlarm.minute)
+              : 'Alarm'),
+          28,
+          10,
+        )
+        drawCentered('red=off knob=snooze', 48, 9)
         break
       }
       case 'snoozing': {
         const left = device.snoozeUntil
           ? Math.max(0, Math.ceil((device.snoozeUntil - Date.now()) / 1000))
           : 0
-        drawCentered('SNOOZE', 8, 14)
-        drawCentered(formatDurationShort(left), 28, 18)
+        drawCentered('SNOOZE', 4, 14)
+        drawCentered(formatDurationShort(left), 24, 18)
+        drawCentered('red=off', 50, 9)
         break
       }
       case 'pomodoro': {
@@ -104,7 +116,7 @@ export function OledScreen({ className }: OledScreenProps) {
         break
       }
     }
-  }, [alarm, device, pomodoroRuntime, songs, timer])
+  }, [alarms, device, pomodoroRuntime, songs, timer])
 
   return (
     <canvas

@@ -3,10 +3,12 @@ import { persist } from 'zustand/middleware'
 import { seedSongs } from '@/data/seedSongs'
 import { ALL_DAYS, isAlarmDayToday, normalizeRepeatDays } from '@/lib/alarmRepeat'
 import { todayKey } from '@/lib/format'
+import type { DeviceApiState } from '@/lib/deviceApi'
 import type {
-  AlarmSettings,
-  DeviceScreen,
+  Alarm,
   DeviceState,
+  PersonAvatars,
+  PersonId,
   PomodoroRuntime,
   PomodoroSettings,
   RunStatus,
@@ -21,23 +23,26 @@ const SNOOZE_SEC = 5 * 60
 
 interface AppStore {
   activeTab: Tab
-  alarm: AlarmSettings
+  alarms: Alarm[]
   songs: Song[]
+  avatars: PersonAvatars
   pomodoro: PomodoroSettings
   pomodoroRuntime: PomodoroRuntime
   timer: TimerState
   device: DeviceState
+  deviceOnline: boolean
+  remote: DeviceApiState | null
 
   setActiveTab: (tab: Tab) => void
-  setAlarmEnabled: (enabled: boolean) => void
-  setAlarmTime: (hour: number, minute: number) => void
-  setAlarmRepeatDays: (repeatDays: boolean[]) => void
-  setAlarmSong: (songId: string) => void
+  addAlarm: () => string
+  updateAlarm: (id: string, patch: Partial<Omit<Alarm, 'id'>>) => void
+  deleteAlarm: (id: string) => void
   updatePomodoroSettings: (settings: Partial<PomodoroSettings>) => void
   setTimerDuration: (durationSec: number) => void
 
   addSong: (name: string, category: SongCategory, blobUrl: string) => void
   deleteSong: (id: string) => void
+  setAvatar: (person: PersonId, dataUrl: string | null) => void
 
   startPomodoro: () => void
   pausePomodoro: () => void
@@ -52,6 +57,20 @@ interface AppStore {
   deviceButtonLong: () => void
   triggerAlarmNow: () => void
   tick: () => void
+
+  setDeviceStatus: (online: boolean, remote: DeviceApiState | null) => void
+}
+
+interface PersistedStore {
+  alarms: Alarm[]
+  songs: Song[]
+  avatars: PersonAvatars
+  pomodoro: PomodoroSettings
+  timer: TimerState
+}
+
+function defaultAvatars(): PersonAvatars {
+  return { vlad: null, karina: null }
 }
 
 const defaultPomodoroRuntime: PomodoroRuntime = {
@@ -61,51 +80,117 @@ const defaultPomodoroRuntime: PomodoroRuntime = {
   currentRound: 0,
 }
 
+function initialDevice(): DeviceState {
+  return {
+    screen: 'clock',
+    menuIndex: 0,
+    snoozeUntil: null,
+    ringingAlarmId: null,
+    dismissed: {},
+  }
+}
+
 function initialTimer(): TimerState {
   return { durationSec: 5 * 60, remainingSec: 5 * 60, status: 'idle' }
+}
+
+function defaultAlarms(): Alarm[] {
+  return [
+    {
+      id: 'alarm-1',
+      enabled: true,
+      hour: 7,
+      minute: 30,
+      repeatDays: [...ALL_DAYS],
+      songId: seedSongs[0]?.id ?? null,
+    },
+  ]
+}
+
+function clampInt(value: unknown, lo: number, hi: number, fallback: number): number {
+  const n = typeof value === 'number' ? Math.trunc(value) : Number.NaN
+  if (Number.isNaN(n)) return fallback
+  return Math.min(hi, Math.max(lo, n))
+}
+
+function normalizeAlarm(raw: unknown, index: number): Alarm {
+  const a = (raw ?? {}) as Partial<Alarm>
+  return {
+    id: typeof a.id === 'string' && a.id ? a.id : `alarm-${index + 1}`,
+    enabled: a.enabled !== false,
+    hour: clampInt(a.hour, 0, 23, 7),
+    minute: clampInt(a.minute, 0, 59, 0),
+    repeatDays: normalizeRepeatDays(a.repeatDays),
+    songId: typeof a.songId === 'string' ? a.songId : null,
+  }
+}
+
+function withoutKey(map: Record<string, string>, key: string): Record<string, string> {
+  if (!(key in map)) return map
+  const next = { ...map }
+  delete next[key]
+  return next
 }
 
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
       activeTab: 'alarm',
-      alarm: {
-        enabled: true,
-        hour: 7,
-        minute: 30,
-        repeatDays: [...ALL_DAYS],
-        songId: seedSongs[0]?.id ?? null,
-      },
+      alarms: defaultAlarms(),
       songs: seedSongs,
+      avatars: defaultAvatars(),
       pomodoro: { workMin: 25, breakMin: 5, longBreakMin: 15, rounds: 4 },
       pomodoroRuntime: { ...defaultPomodoroRuntime },
       timer: initialTimer(),
-      device: {
-        screen: 'clock',
-        menuIndex: 0,
-        snoozeUntil: null,
-        dismissedDate: null,
-      },
+      device: initialDevice(),
+      deviceOnline: false,
+      remote: null,
 
       setActiveTab: (tab) => set({ activeTab: tab }),
 
-      setAlarmEnabled: (enabled) =>
-        set((s) => ({ alarm: { ...s.alarm, enabled } })),
-
-      setAlarmTime: (hour, minute) =>
+      addAlarm: () => {
+        const id = `alarm-${Date.now()}`
         set((s) => ({
-          alarm: { ...s.alarm, hour, minute },
-          device: { ...s.device, dismissedDate: null },
+          alarms: [
+            ...s.alarms,
+            {
+              id,
+              enabled: true,
+              hour: 7,
+              minute: 0,
+              repeatDays: [...ALL_DAYS],
+              songId: null,
+            },
+          ],
+        }))
+        return id
+      },
+
+      updateAlarm: (id, patch) =>
+        set((s) => ({
+          alarms: s.alarms.map((alarm) =>
+            alarm.id === id
+              ? {
+                  ...alarm,
+                  ...patch,
+                  repeatDays: normalizeRepeatDays(patch.repeatDays ?? alarm.repeatDays),
+                }
+              : alarm,
+          ),
+          device: { ...s.device, dismissed: withoutKey(s.device.dismissed, id) },
         })),
 
-      setAlarmRepeatDays: (repeatDays) =>
+      deleteAlarm: (id) =>
         set((s) => ({
-          alarm: { ...s.alarm, repeatDays: normalizeRepeatDays(repeatDays) },
-          device: { ...s.device, dismissedDate: null },
+          alarms: s.alarms.filter((alarm) => alarm.id !== id),
+          device: {
+            ...s.device,
+            dismissed: withoutKey(s.device.dismissed, id),
+            ...(s.device.ringingAlarmId === id
+              ? { screen: 'clock' as const, ringingAlarmId: null, snoozeUntil: null }
+              : {}),
+          },
         })),
-
-      setAlarmSong: (songId) =>
-        set((s) => ({ alarm: { ...s.alarm, songId } })),
 
       updatePomodoroSettings: (settings) =>
         set((s) => ({ pomodoro: { ...s.pomodoro, ...settings } })),
@@ -136,10 +221,14 @@ export const useAppStore = create<AppStore>()(
       deleteSong: (id) =>
         set((s) => ({
           songs: s.songs.filter((song) => song.id !== id),
-          alarm: {
-            ...s.alarm,
-            songId: s.alarm.songId === id ? null : s.alarm.songId,
-          },
+          alarms: s.alarms.map((alarm) =>
+            alarm.songId === id ? { ...alarm, songId: null } : alarm,
+          ),
+        })),
+
+      setAvatar: (person, dataUrl) =>
+        set((s) => ({
+          avatars: { ...s.avatars, [person]: dataUrl },
         })),
 
       startPomodoro: () => {
@@ -212,6 +301,8 @@ export const useAppStore = create<AppStore>()(
             ...s.device,
             screen: 'alarm_ringing',
             snoozeUntil: null,
+            ringingAlarmId:
+              s.alarms.find((a) => a.enabled)?.id ?? s.alarms[0]?.id ?? null,
           },
         })),
 
@@ -223,9 +314,21 @@ export const useAppStore = create<AppStore>()(
         set({ device: { ...device, menuIndex: next } })
       },
 
+      // Knob click while ringing = snooze (rotating button snoozes).
       deviceKnobClick: () => {
         const state = get()
         const { device, pomodoroRuntime, timer } = state
+
+        if (device.screen === 'alarm_ringing') {
+          set({
+            device: {
+              ...device,
+              screen: 'snoozing',
+              snoozeUntil: Date.now() + SNOOZE_SEC * 1000,
+            },
+          })
+          return
+        }
 
         if (device.screen === 'clock') {
           set({ device: { ...device, screen: 'menu', menuIndex: 0 } })
@@ -245,18 +348,13 @@ export const useAppStore = create<AppStore>()(
         }
       },
 
+      // Red button while ringing/snoozing = turn the alarm off.
       deviceButtonShort: () => {
         const state = get()
         const { device } = state
 
-        if (device.screen === 'alarm_ringing') {
-          set({
-            device: {
-              ...device,
-              screen: 'snoozing',
-              snoozeUntil: Date.now() + SNOOZE_SEC * 1000,
-            },
-          })
+        if (device.screen === 'alarm_ringing' || device.screen === 'snoozing') {
+          dismissRinging(set, device)
           return
         }
 
@@ -282,14 +380,7 @@ export const useAppStore = create<AppStore>()(
         const { device } = state
 
         if (device.screen === 'alarm_ringing' || device.screen === 'snoozing') {
-          set({
-            device: {
-              ...device,
-              screen: 'clock',
-              snoozeUntil: null,
-              dismissedDate: todayKey(),
-            },
-          })
+          dismissRinging(set, device)
           return
         }
 
@@ -312,9 +403,9 @@ export const useAppStore = create<AppStore>()(
         const state = get()
         const now = new Date()
         const nowMs = Date.now()
-        const { alarm, device, pomodoro, pomodoroRuntime, timer } = state
+        const { alarms, device, pomodoro, pomodoroRuntime, timer } = state
 
-        // Snooze expiry
+        // Snooze expiry -> ring again
         if (
           device.screen === 'snoozing' &&
           device.snoozeUntil &&
@@ -330,23 +421,27 @@ export const useAppStore = create<AppStore>()(
           return
         }
 
-        // Alarm fire check
-        if (
-          alarm.enabled &&
-          isAlarmDayToday(alarm.repeatDays, now) &&
-          device.screen === 'clock' &&
-          device.dismissedDate !== todayKey() &&
-          now.getHours() === alarm.hour &&
-          now.getMinutes() === alarm.minute &&
-          now.getSeconds() === 0
-        ) {
-          set({
-            device: {
-              ...device,
-              screen: 'alarm_ringing',
-              snoozeUntil: null,
-            },
-          })
+        // Alarm fire check (per alarm, per-day dismissal)
+        if (device.screen === 'clock') {
+          const today = todayKey()
+          const firing = alarms.find(
+            (alarm) =>
+              alarm.enabled &&
+              isAlarmDayToday(alarm.repeatDays, now) &&
+              alarm.hour === now.getHours() &&
+              alarm.minute === now.getMinutes() &&
+              device.dismissed[alarm.id] !== today,
+          )
+          if (firing) {
+            set({
+              device: {
+                ...device,
+                screen: 'alarm_ringing',
+                snoozeUntil: null,
+                ringingAlarmId: firing.id,
+              },
+            })
+          }
         }
 
         // Pomodoro countdown
@@ -374,8 +469,9 @@ export const useAppStore = create<AppStore>()(
             set({
               timer: { ...timer, remainingSec: 0, status: 'done' },
               device: {
-                ...device,
-                screen: device.screen === 'timer' ? 'clock' : device.screen,
+                ...get().device,
+                screen:
+                  get().device.screen === 'timer' ? 'clock' : get().device.screen,
               },
             })
           } else {
@@ -383,41 +479,77 @@ export const useAppStore = create<AppStore>()(
           }
         }
       },
+
+      setDeviceStatus: (online, remote) =>
+        set({ deviceOnline: online, remote }),
     }),
     {
       name: 'vlad-brodyaga-store',
+      version: 2,
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as Record<string, unknown>
+        if (!Array.isArray(p.alarms) && p.alarm && typeof p.alarm === 'object') {
+          p.alarms = [{ id: 'alarm-1', songId: null, ...(p.alarm as object) }]
+        }
+        delete p.alarm
+        delete p.device
+        delete p.pomodoroRuntime
+        if (version < 2 && !p.avatars) {
+          p.avatars = defaultAvatars()
+        }
+        return p as unknown as PersistedStore
+      },
       merge: (persisted, current) => {
-        const saved = persisted as Partial<AppStore>
+        const saved = (persisted ?? {}) as Partial<PersistedStore>
+        const alarms = Array.isArray(saved.alarms)
+          ? saved.alarms.map(normalizeAlarm)
+          : current.alarms
+        const durationSec = clampInt(
+          saved.timer?.durationSec,
+          1,
+          180 * 60 + 59,
+          current.timer.durationSec,
+        )
         return {
           ...current,
-          ...saved,
-          alarm: {
-            ...current.alarm,
-            ...saved.alarm,
-            repeatDays: normalizeRepeatDays(saved.alarm?.repeatDays),
-          },
+          alarms,
+          songs: Array.isArray(saved.songs) ? saved.songs : current.songs,
+          avatars: saved.avatars ?? current.avatars,
+          pomodoro: { ...current.pomodoro, ...saved.pomodoro },
+          timer: { durationSec, remainingSec: durationSec, status: 'idle' },
         }
       },
-      partialize: (s) => ({
-        alarm: s.alarm,
+      partialize: (s): PersistedStore => ({
+        alarms: s.alarms,
         songs: s.songs,
+        avatars: s.avatars,
         pomodoro: s.pomodoro,
         timer: {
           durationSec: s.timer.durationSec,
           remainingSec: s.timer.durationSec,
           status: 'idle' as RunStatus,
         },
-        pomodoroRuntime: defaultPomodoroRuntime,
-        device: {
-          screen: 'clock' as DeviceScreen,
-          menuIndex: 0,
-          snoozeUntil: null,
-          dismissedDate: null,
-        },
       }),
     },
   ),
 )
+
+function dismissRinging(
+  set: (partial: Partial<AppStore> | ((s: AppStore) => Partial<AppStore>)) => void,
+  device: DeviceState,
+) {
+  set((s) => ({
+    device: {
+      ...s.device,
+      screen: 'clock',
+      snoozeUntil: null,
+      ringingAlarmId: null,
+      dismissed: device.ringingAlarmId
+        ? { ...s.device.dismissed, [device.ringingAlarmId]: todayKey() }
+        : s.device.dismissed,
+    },
+  }))
+}
 
 function advancePomodoroPhase(
   set: (partial: Partial<AppStore> | ((s: AppStore) => Partial<AppStore>)) => void,

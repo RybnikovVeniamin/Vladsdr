@@ -9,7 +9,7 @@
 
 **One-line summary:** A small desk device on Raspberry Pi 3 A+ with a tiny OLED screen — works as an alarm clock, Pomodoro timer, or regular countdown timer.
 
-**Status:** Pi **flashed and online** (SSH works). **OLED wired and working** — I2C demo shows text on screen. **Knob + red button wired** — Python demo responds to turns and presses. **Web UI prototype built** — mobile settings app + OLED device simulator in browser. **Next:** port app logic from web prototype to Python on the Pi; add buzzer + speaker.
+**Status:** Pi **flashed and online** (SSH works). **OLED wired and working** — I2C demo shows text on screen. **Knob + red button wired** — Python demo responds to turns and presses. **Web UI prototype built** — mobile settings app + OLED device simulator in browser. **Python backend built (`pi/`)** — full alarm/pomodoro/timer logic, on-device menus, and a LAN HTTP API (port 8787) the web app syncs with. **Next:** deploy backend to the Pi and test on hardware; wire buzzer + speaker (sound is an espeak placeholder).
 
 **Owner:** Vlad  
 **Workspace:** `Vlad raspberry` on Desktop  
@@ -36,9 +36,11 @@ What we want to achieve:
 | Path | What it is |
 |------|------------|
 | `CLAUDE.md` | This file — project context for humans + AI |
+| `FEATURES.md` | Detailed feature description of the product |
 | `assets/` | Wiring reference photos (OLED diagram, GPIO pin guide) |
-| `scripts/` | Python tests and demos that run **on the Pi** |
-| `web/` | React web app — settings UI + OLED simulator (runs on Mac, not on Pi yet) |
+| `scripts/` | Small Python hardware tests/demos that run **on the Pi** |
+| `pi/` | **The device app** — Python backend (OLED UI, inputs, alarm/pomo/timer logic, HTTP API). See `pi/README.md` |
+| `web/` | React web app — settings UI + OLED simulator; syncs with the Pi over LAN when reachable |
 
 ---
 
@@ -103,17 +105,19 @@ Use buzzer for **quick beeps** (timer done, button feedback). Use **speaker + am
 
 | Control | Role | Notes |
 |---------|------|-------|
-| **Knob (rotary encoder)** | Each **click** = +1 or −1 minute, or step to next mode | Physical click = haptic feedback; optional tiny buzzer tick on each step |
-| **Red button** | **Start / stop** countdown; **confirm** selection; **snooze** when alarm rings | Short press = action; long press = dismiss alarm |
+| **Knob (rotary encoder)** | Turn = adjust value / move cursor; click = select / next field; **click = snooze while ringing** | Physical click = haptic feedback |
+| **Red button** | Back / pause; long press = stop / home; **turns the alarm off while ringing** (short or long) | Decision 2026-07-02: red = off, knob click = snooze |
 
-**Device flow (from web prototype — target for Pi app):**
+**Device flow (implemented in `pi/vlad_device/`, see `pi/README.md` for the full map):**
 
-1. Idle → **clock** screen shows current time + next alarm.
-2. **Knob click** → open **menu** (Alarm / Pomo / Timer).
-3. **Knob turn** → move selection in menu.
-4. **Red button** → start selected mode / snooze alarm.
-5. **Red button long press** → dismiss ringing alarm.
-6. Timer or alarm finishes → **buzzer beeps** + **speaker** for loud alarm.
+1. Idle → **clock** screen: current time + next upcoming alarm (+ tiny P/T marker if a session runs in background).
+2. **Knob click** → **menu** (Alarm / Pomo / Timer); turn to move, click to enter.
+3. **Alarm** → alarm list (multiple alarms!) → editor: hour → minute → repeat preset → on/off → save.
+4. **Pomo** → presets (Classic/Deep/Quick) or Custom (work→break→long→rounds) → runs.
+5. **Timer** → presets (1–30 min) or Custom (minutes → seconds) → runs.
+6. Alarm rings → **knob click = snooze 5 min**, **red button = turn off**.
+7. Timer done → DONE screen + beeps until any button press.
+8. Sound today = espeak voice placeholder; buzzer + speaker land later.
 
 ### Wiring — snooze / action button (GPIO)
 
@@ -151,22 +155,24 @@ Each physical **detent** (click) = one step in software. Python: `gpiozero.Rotar
 ## Features (detail)
 
 ### 1. Alarm
-- Set hour + minute; **repeat by day of week** (every day / weekdays / weekends / custom).
-- Pick wake-up song — categories **Vlad** and **Karina** (upload custom sounds).
-- Show current time on screen when idle; show next alarm time.
-- Alert when time is reached (sound + visible cue on display).
-- **Snooze:** 5 minutes (short press red button while ringing).
-- **Dismiss:** long press red button.
+- **Multiple alarms** — e.g. one for weekdays, one for weekends, or one per day.
+- Each alarm: hour + minute; **repeat by day of week** (every day / weekdays / weekends / custom); on/off.
+- Pick wake-up song per alarm — categories **Vlad** and **Karina** (upload custom sounds in web app).
+- Clock screen shows current time + the next upcoming alarm.
+- **Snooze:** 5 minutes — **knob click** while ringing (also from web app).
+- **Turn off:** **red button** (short or long press) — off for the rest of the day, per alarm.
 
 ### 2. Pomodoro timer
-- User-adjustable: work (default **25 min**), break (**5 min**), long break (**15 min**), rounds (**4**).
-- Show remaining time clearly; indicate work vs break phase.
-- Start from device menu; pause with red button.
+- **Presets:** Classic 25/5 ×4, Deep 50/10 ×3, Quick 15/3 ×4.
+- **Custom:** work (1–120 min), break (1–60), long break (1–60), rounds (1–12).
+- Show remaining time clearly; indicate work vs break phase and round.
+- Knob click = pause/resume; red long press = stop; runs in background if you leave the screen.
 
 ### 3. Regular timer
-- User sets any duration (minutes).
-- Countdown on screen; alert when finished.
-- Start / pause / reset.
+- **Presets:** 1 / 3 / 5 / 10 / 15 / 30 min.
+- **Custom:** minutes **and seconds** (seconds step by 5 on the device knob).
+- Countdown on screen; DONE screen + beeps when finished (any button stops it).
+- Start / pause / reset — from the device or the web app.
 
 ### Shared behavior
 - Switch between modes via on-device menu (Alarm / Pomo / Timer).
@@ -180,21 +186,22 @@ Each physical **detent** (click) = one step in software. Python: `gpiozero.Rotar
 | Layer | Choice | Status |
 |-------|--------|--------|
 | OS on Pi | **Raspberry Pi OS Lite** | ✅ Flashed, SSH works |
-| Pi app language | **Python 3** | 🔄 Demos done; full app not yet |
-| Display (Pi) | **luma.oled** (SSD1306 / SH1106) | ✅ Working in `demo_actions.py` |
+| Pi app | **Python 3** — `pi/vlad_device/` | ✅ Built + logic self-tested; hardware test pending |
+| Pi HTTP API | **Flask** on port **8787** (LAN only) | ✅ Built; also serves the web app from `pi/webroot/` |
+| Display (Pi) | **luma.oled** (SSD1306 / SH1106) | ✅ Working (`demo_actions.py`, `pi/vlad_device/display.py`) |
 | Audio (speaker) | **simpleaudio**, **pygame**, or **alsa** + WAV files | ⏳ Not wired yet |
 | Audio (buzzer) | **gpiozero** Buzzer or PWM tone | ⏳ Not wired yet |
-| Input (Pi) | **RPi.GPIO** / **gpiozero** | ✅ Knob + button tested |
-| Voice feedback (demo) | **espeak-ng** | ✅ Used in demo for debugging |
-| Web prototype | **React + Vite + TypeScript + Zustand** | ✅ Settings + device simulator |
-| Cloud / backend | **None** for v1 | Fully offline device |
+| Ring sound (interim) | **espeak-ng** voice loop | ✅ Placeholder in `pi/vlad_device/sound.py` |
+| Input (Pi) | **RPi.GPIO** polling watcher | ✅ Knob + button (short/long press) |
+| Web app | **React + Vite + TypeScript + Zustand** | ✅ Settings + simulator + **LAN sync with Pi** |
+| Cloud | **None** for v1 | Fully offline; web ↔ Pi over home Wi-Fi only |
 | Repo | **Git** on GitHub | ✅ Team can clone and collaborate |
 
 ---
 
 ## Web UI prototype (`web/`)
 
-A **mobile-first browser app** to design and test the product before porting to the Pi. Not deployed to the device yet — runs on your Mac.
+A **mobile-first browser app**: the settings UI for the device plus an OLED simulator. When the Pi is reachable on the home network it **syncs live** (polls every 3 s, pushes edits, shows "On device" cards to start/pause/stop sessions and snooze/turn off a ringing alarm remotely). Without the Pi it still works standalone with browser storage. It can run from the Mac dev server or be **served by the Pi itself** (see `pi/README.md`).
 
 ### Run locally
 
@@ -213,11 +220,11 @@ Settings persist in browser **localStorage**. See `web/README.md` for details.
 
 | Tab | Features |
 |-----|----------|
-| **Alarm** | Enable/disable, set time, repeat days, pick song (Vlad / Karina cards) |
-| **Pomodoro** | Adjust work/break/long-break/rounds; run session timer |
-| **Timer** | Set duration, start/pause/reset countdown |
-| **Upload** | Add custom alarm sounds (stored in browser) |
-| **Device preview** | Simulates OLED screens: clock, menu, alarm ringing, snooze, pomodoro, timer |
+| **Alarm** | **List of alarms** (add/delete/toggle) — per alarm: time, repeat days (weekday/weekend presets), song (Vlad / Karina cards). Device connection card with remote snooze / turn off |
+| **Pomodoro** | Presets (Classic/Deep/Quick) + custom work/break/long-break/rounds; run locally or **start on the device** |
+| **Timer** | Presets (1–30 min) + custom minutes **and seconds**; run locally or on the device |
+| **Upload** | Add custom alarm sounds (stored in browser; not on the Pi yet) |
+| **Device preview** | Simulates OLED screens: clock (next alarm), menu, ringing (red=off / knob=snooze), snooze, pomodoro, timer |
 
 The device simulator shares state with the settings app via Zustand — open both URLs to configure on one side and see the “device” react on the other.
 
@@ -248,20 +255,21 @@ Requires on Pi: `python3-luma.oled`, `python3-pil`, `python3-rpi.gpio`, `python3
 ## Architecture (high level)
 
 ```
-                    ┌─────────────────────────────────┐
-                    │  web/ — React prototype (Mac)   │
-                    │  Settings UI + OLED simulator   │
-                    └──────────────┬──────────────────┘
-                                   │ design reference
-                                   ▼
-[Red button + knob]  →  [Python app on Pi 3 A+]  ← TO BUILD
-                              │
-                              ├→ 0.96" OLED (I2C) — time / countdown / mode  ✅ demo
-                              ├→ Buzzer — short beeps                         ⏳
-                              └→ MAX98357A → 3W speaker — loud alarm           ⏳
+   ┌──────────────────────────────────────┐     HTTP over home Wi-Fi
+   │  web/ — React app (Mac dev server    │  ◄──────────────────────────┐
+   │  or served by the Pi itself)         │   GET/PUT /api/* (port 8787)│
+   │  Settings + OLED simulator + sync    │ ────────────────────────────┤
+   └──────────────────────────────────────┘                             ▼
+[Red button + knob]  →  [pi/vlad_device — Python app on Pi 3 A+]  ✅ BUILT
+                              │        (Flask API + state machine + tick)
+                              ├→ 0.96" OLED (I2C) — clock / menus / countdowns  ✅
+                              ├→ espeak voice — interim ring sound              ✅
+                              ├→ Buzzer — short beeps                           ⏳
+                              └→ MAX98357A → 3W speaker — loud alarm            ⏳
 ```
 
-No phone app or cloud in v1 — everything runs on the Pi. The web app is a **design and testing tool**, not part of the shipped product.
+No cloud in v1 — everything runs on the Pi; the web app talks to it only on
+the local network (and still works standalone/offline as a simulator).
 
 ---
 
@@ -284,6 +292,12 @@ No phone app or cloud in v1 — everything runs on the Pi. The web app is a **de
 | 2026-06-28 | **Snooze 5 min**, dismiss via long press | Matches desk-alarm expectations |
 | 2026-06-28 | Wake-up songs: **Vlad / Karina** categories | Personal alarm sounds; upload supported in web UI |
 | 2026-06-28 | Git repo on **GitHub** | Team collaboration |
+| 2026-07-02 | **Multiple alarms** (list), not one alarm | Separate weekday / weekend / per-day wake-up times |
+| 2026-07-02 | Ring controls: **red = turn off, knob click = snooze** | Vlad's spec; simpler than short/long-press snooze |
+| 2026-07-02 | **Pomodoro presets** (Classic/Deep/Quick) + custom | Fast start on a tiny screen |
+| 2026-07-02 | **Timer presets** + custom minutes **and seconds** | Vlad's spec |
+| 2026-07-02 | Backend = **Python + Flask**, LAN API on port **8787** | Lightweight for 512 MB RAM; web app syncs over home Wi-Fi |
+| 2026-07-02 | Pi can **serve the built web app** (`pi/webroot/`) | Configure from any phone without the Mac |
 
 ---
 
@@ -311,7 +325,7 @@ No phone app or cloud in v1 — everything runs on the Pi. The web app is a **de
 1. Clone: `git clone https://github.com/RybnikovVeniamin/Vladsdr.git`
 2. Read this file (`CLAUDE.md`) — it is the single source of truth.
 3. **Web UI:** `cd web && npm install && npm run dev`
-4. **Pi hardware:** SSH to `vladsdr@Vlad-brodyaga.local`, copy/run scripts from `scripts/`
+4. **Pi hardware:** SSH to `vladsdr@Vlad-brodyaga.local`; the device app lives in `pi/` (deploy + run: `pi/README.md`); quick hardware demos in `scripts/`
 5. Wiring photos are in `assets/`
 6. When you change pins, screens, or features — update this file in the same PR/commit.
 
@@ -337,8 +351,9 @@ No phone app or cloud in v1 — everything runs on the Pi. The web app is a **de
 - [x] **Pomodoro:** user-adjustable work/break/long-break/rounds (defaults 25/5/15/4)
 - [x] **UI on tiny screen:** clock idle → menu on knob click → mode screens
 - [ ] **Case / enclosure** design?
-- [ ] **Web UI on Pi?** Likely no — settings on device via knob; web stays dev tool unless we add a config page later
-- [ ] **Sync settings** from web to Pi — how? (manual export, Wi‑Fi API, etc.)
+- [x] **Web UI on Pi?** → Yes: Flask serves the built web app from `pi/webroot/` (optional)
+- [x] **Sync settings** from web to Pi → **LAN HTTP API on port 8787**; web app polls every 3 s and pushes edits (device wins on reconnect)
+- [ ] **Song files on the Pi** — upload/transfer so real songs play (espeak is the placeholder)
 
 ---
 
@@ -350,10 +365,11 @@ No phone app or cloud in v1 — everything runs on the Pi. The web app is a **de
 | 2. Wire OLED → show text on screen | ✅ Done (`demo_actions.py`) |
 | 3. Wire red button + knob → detect input | ✅ Done |
 | 4. Web UI prototype (settings + device simulator) | ✅ Done |
-| 5. Wire buzzer → beep when timer ends | ⏳ Next |
-| 6. Add speaker + amp → louder alarm sound | ⏳ |
-| 7. Port full app logic from web prototype to Python on Pi | ⏳ |
-| 8. Polish UI; build case | ⏳ |
+| 5. Python backend (`pi/`): full app logic + LAN API + web sync | ✅ Built; logic self-tested on Mac |
+| 6. Deploy backend to the Pi; test on real hardware; enable systemd service | ⏳ Next |
+| 7. Wire buzzer → beep when timer ends | ⏳ |
+| 8. Add speaker + amp → louder alarm; play real song files | ⏳ |
+| 9. Polish UI; build case | ⏳ |
 
 ---
 
@@ -372,3 +388,6 @@ No phone app or cloud in v1 — everything runs on the Pi. The web app is a **de
 | 2026-06-28 | Alarm repeat days, snooze/dismiss, Vlad/Karina song categories decided in web UI |
 | 2026-06-28 | Python demos: OLED + knob + button working on Pi |
 | 2026-06-28 | Repo pushed to GitHub; CLAUDE.md updated for team onboarding |
+| 2026-07-02 | `FEATURES.md` added — detailed feature description |
+| 2026-07-02 | **Python backend built (`pi/`)**: alarms (multiple, weekday/weekend), pomodoro presets, timer with seconds, on-device menus/editors, Flask LAN API :8787, espeak ring placeholder, systemd unit; 75 logic checks green |
+| 2026-07-02 | Web app upgraded: alarm list, presets, seconds timer, **red=off / knob=snooze**, LAN sync with the Pi (poll + push), remote device cards |

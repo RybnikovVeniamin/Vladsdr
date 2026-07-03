@@ -1,6 +1,8 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DeviceRuntimeCard } from '@/components/web/DeviceRuntimeCard'
 import { Stepper } from '@/components/web/Stepper'
+import { TIMER_PRESET_MINUTES } from '@/data/presets'
 import { formatDuration } from '@/lib/format'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -12,12 +14,13 @@ export function TimerPage() {
   const resetTimer = useAppStore((s) => s.resetTimer)
 
   const minutes = Math.floor(timer.durationSec / 60)
+  const seconds = timer.durationSec % 60
   const isActive = timer.status !== 'idle'
-
-  const setMinutes = (m: number) => setTimerDuration(m * 60)
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
+      <DeviceRuntimeCard mode="timer" />
+
       {isActive && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="flex flex-col items-center gap-2 py-8">
@@ -52,15 +55,42 @@ export function TimerPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Duration</CardTitle>
+          <CardTitle className="text-base">Presets</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-3 gap-2">
+          {TIMER_PRESET_MINUTES.map((m) => (
+            <Button
+              key={m}
+              type="button"
+              variant={timer.durationSec === m * 60 ? 'default' : 'outline'}
+              className="min-h-11"
+              onClick={() => setTimerDuration(m * 60)}
+            >
+              {m} min
+            </Button>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Custom duration</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Stepper
             label="Minutes"
             value={minutes}
-            min={1}
+            min={0}
             max={180}
-            onChange={setMinutes}
+            onChange={(m) => setTimerDuration(m * 60 + seconds)}
+          />
+          <Stepper
+            label="Seconds"
+            value={seconds}
+            min={0}
+            max={55}
+            step={5}
+            onChange={(s) => setTimerDuration(minutes * 60 + s)}
           />
           {!isActive && (
             <Button

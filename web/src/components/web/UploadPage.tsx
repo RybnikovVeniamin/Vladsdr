@@ -22,19 +22,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { SongCategory } from '@/types'
+import { PersonAvatar } from '@/components/web/PersonAvatar'
+import { readImageAsAvatarDataUrl } from '@/lib/imageAvatar'
+import type { PersonId, SongCategory } from '@/types'
 import { useAppStore } from '@/store/useAppStore'
+
+const PROFILE_PEOPLE: { id: PersonId; name: string }[] = [
+  { id: 'vlad', name: 'Vlad' },
+  { id: 'karina', name: 'Karina' },
+]
 
 export function UploadPage() {
   const songs = useAppStore((s) => s.songs)
+  const avatars = useAppStore((s) => s.avatars)
   const addSong = useAppStore((s) => s.addSong)
   const deleteSong = useAppStore((s) => s.deleteSong)
+  const setAvatar = useAppStore((s) => s.setAvatar)
 
   const fileRef = useRef<HTMLInputElement>(null)
+  const avatarFileRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState('')
   const [category, setCategory] = useState<SongCategory>('both')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [avatarTarget, setAvatarTarget] = useState<PersonId | null>(null)
 
   const onFile = (file: File | undefined) => {
     if (!file) return
@@ -68,10 +79,82 @@ export function UploadPage() {
     }
   }
 
+  const openAvatarPicker = (person: PersonId) => {
+    setAvatarTarget(person)
+    avatarFileRef.current?.click()
+  }
+
+  const onAvatarFile = async (file: File | undefined) => {
+    if (!file || !avatarTarget) return
+    try {
+      const dataUrl = await readImageAsAvatarDataUrl(file)
+      setAvatar(avatarTarget, dataUrl)
+      toast.success(`${avatarTarget === 'vlad' ? 'Vlad' : 'Karina'}'s photo updated`)
+    } catch {
+      toast.error('Please pick a photo (JPG, PNG, etc.)')
+    } finally {
+      setAvatarTarget(null)
+      if (avatarFileRef.current) avatarFileRef.current.value = ''
+    }
+  }
+
   const uploaded = songs.filter((s) => !s.id.startsWith('seed-'))
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Profile photos</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            These small photos show on the Alarm song picker for Vlad and Karina.
+          </p>
+          {PROFILE_PEOPLE.map((person) => (
+            <div
+              key={person.id}
+              className="flex items-center gap-3 rounded-lg border p-3"
+            >
+              <PersonAvatar name={person.name} avatarUrl={avatars[person.id]} />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{person.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {avatars[person.id] ? 'Custom photo' : 'Default initial'}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2">
+                <Button
+                  variant="outline"
+                  className="min-h-10"
+                  onClick={() => openAvatarPicker(person.id)}
+                >
+                  Change
+                </Button>
+                {avatars[person.id] && (
+                  <Button
+                    variant="ghost"
+                    className="min-h-10 text-destructive"
+                    onClick={() => {
+                      setAvatar(person.id, null)
+                      toast.success(`${person.name}'s photo removed`)
+                    }}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+          <input
+            ref={avatarFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => onAvatarFile(e.target.files?.[0])}
+          />
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Upload sound</CardTitle>

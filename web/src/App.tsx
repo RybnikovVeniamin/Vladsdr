@@ -1,4 +1,5 @@
 import { useAppStore } from '@/store/useAppStore'
+import { useDeviceSync } from '@/hooks/useDeviceSync'
 import { MobileShell } from '@/components/layout/MobileShell'
 import { AlarmPage } from '@/components/web/AlarmPage'
 import { PomodoroPage } from '@/components/web/PomodoroPage'
@@ -25,6 +26,7 @@ function MainContent() {
 export default function App() {
   const activeTab = useAppStore((s) => s.activeTab)
   const setActiveTab = useAppStore((s) => s.setActiveTab)
+  useDeviceSync()
 
   return (
     <MobileShell activeTab={activeTab} onTabChange={setActiveTab}>

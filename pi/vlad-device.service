@@ -1,0 +1,14 @@
+[Unit]
+Description=Vlad Brodyaga desk device (alarm / pomodoro / timer)
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+User=vladsdr
+WorkingDirectory=/home/vladsdr/pi
+ExecStart=/usr/bin/python3 -m vlad_device.main
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

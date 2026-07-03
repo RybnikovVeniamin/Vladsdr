@@ -1,4 +1,4 @@
-import { Play } from 'lucide-react'
+import { Pause, Play, Square } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -7,7 +7,10 @@ import type { Song } from '@/types'
 interface SongListProps {
   songs: Song[]
   selectedId?: string | null
-  onPlay: (song: Song) => void
+  playingId?: string | null
+  isPlaying?: boolean
+  onTogglePlay: (song: Song) => void
+  onStop?: () => void
   onSelect: (song: Song) => void
   selectLabel?: string
 }
@@ -15,7 +18,10 @@ interface SongListProps {
 export function SongList({
   songs,
   selectedId,
-  onPlay,
+  playingId,
+  isPlaying = false,
+  onTogglePlay,
+  onStop,
   onSelect,
   selectLabel = 'Set as alarm',
 }: SongListProps) {
@@ -41,11 +47,30 @@ export function SongList({
             variant="outline"
             size="icon"
             className="size-11 shrink-0"
-            aria-label={`Play ${song.name}`}
-            onClick={() => onPlay(song)}
+            aria-label={
+              playingId === song.id && isPlaying
+                ? `Pause ${song.name}`
+                : `Play ${song.name}`
+            }
+            onClick={() => onTogglePlay(song)}
           >
-            <Play className="size-4" />
+            {playingId === song.id && isPlaying ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4" />
+            )}
           </Button>
+          {playingId === song.id && onStop && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-11 shrink-0"
+              aria-label={`Stop ${song.name}`}
+              onClick={onStop}
+            >
+              <Square className="size-4" />
+            </Button>
+          )}
           <Button
             className="min-h-11 shrink-0"
             variant={selectedId === song.id ? 'secondary' : 'default'}
