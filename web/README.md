@@ -20,9 +20,9 @@ Open the settings URL in Chrome and use DevTools → iPhone size to preview mobi
 ## Features
 
 - **Alarm** — list of alarms (weekday / weekend / custom days), per-alarm time + wake-up song (Vlad / Karina cards); snooze / turn off a ringing device remotely
-- **Pomodoro** — presets (Classic / Deep / Quick) + custom; run locally or start on the device
-- **Timer** — presets + custom minutes **and seconds**; run locally or on the device
-- **Upload** — add alarm sounds (stored in browser)
+- **Pomodoro** — presets (Classic / Deep / Quick) + custom; custom session sound (Vlad / Karina cards); run locally or start on the device
+- **Timer** — presets + custom minutes **and seconds**; custom finish sound; run locally or on the device
+- **Upload** — add custom sounds for alarm / timer / pomodoro (stored in browser)
 - **Device preview** (`/device.html`) — 128×64 OLED simulator with virtual knob and red button (ringing: red = off, knob click = snooze)
 
 Settings persist in browser localStorage and are pushed to the Pi when connected.

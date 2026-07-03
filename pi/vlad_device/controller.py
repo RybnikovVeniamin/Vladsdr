@@ -26,6 +26,8 @@ from .state import (
     Persistence,
     PomodoroRuntime,
     TimerState,
+    _opt_song_id,
+    _require,
     date_key,
     js_day,
     next_alarm,
@@ -54,6 +56,9 @@ class NullRinger:
     def say(self, text: str) -> None:
         pass
 
+    def notify(self, text: str, *, song_path=None) -> None:
+        pass
+
     def set_volume(self, volume: int) -> None:
         pass
 
@@ -67,9 +72,19 @@ class Controller:
         self._songs = songs or SongLibrary(state_path.parent)
         self._appearance = appearance or AppearanceStore(state_path.parent)
 
-        self.alarms, self.pomodoro, timer_duration, self.volume = self._persistence.load()
+        (
+            self.alarms,
+            self.pomodoro,
+            timer_duration,
+            timer_song_id,
+            self.volume,
+        ) = self._persistence.load()
         self.pomodoro_rt = PomodoroRuntime()
-        self.timer = TimerState(duration_sec=timer_duration, remaining_sec=timer_duration)
+        self.timer = TimerState(
+            duration_sec=timer_duration,
+            remaining_sec=timer_duration,
+            song_id=timer_song_id,
+        )
         self.ringer.set_volume(self.volume)
 
         self.screen = "clock"
@@ -87,7 +102,13 @@ class Controller:
     # ------------------------------------------------------------------ utils
 
     def _save(self) -> None:
-        self._persistence.save(self.alarms, self.pomodoro, self.timer.duration_sec, self.volume)
+        self._persistence.save(
+            self.alarms,
+            self.pomodoro,
+            self.timer.duration_sec,
+            self.timer.song_id,
+            self.volume,
+        )
 
     def _flash(self, text: str) -> None:
         self.flash_text = text
@@ -131,6 +152,9 @@ class Controller:
         return choices
 
     # ------------------------------------------------------- ringing helpers
+
+    def _song_path(self, song_id: str | None):
+        return self._songs.get_audio_path(song_id) if song_id else None
 
     def _alarm_song_path(self, alarm_id: str):
         alarm = next((a for a in self.alarms if a.id == alarm_id), None)
@@ -542,6 +566,10 @@ class Controller:
             self.ringer.stop()
             self._goto("clock")
 
+    def _pomo_cue(self, text: str) -> None:
+        """Play the pomodoro's custom sound once, or speak the cue if none set."""
+        self.ringer.notify(text, song_path=self._song_path(self.pomodoro.song_id))
+
     def _advance_pomodoro_phase(self) -> None:
         rt = self.pomodoro_rt
         settings = self.pomodoro
@@ -549,19 +577,19 @@ class Controller:
             if rt.current_round >= settings.rounds:
                 rt.phase = "long_break"
                 rt.remaining_sec = settings.long_break_min * 60
-                self.ringer.say("Long break")
+                self._pomo_cue("Long break")
             else:
                 rt.phase = "break"
                 rt.remaining_sec = settings.break_min * 60
-                self.ringer.say("Break time")
+                self._pomo_cue("Break time")
         elif rt.phase == "break":
             rt.phase = "work"
             rt.current_round += 1
             rt.remaining_sec = settings.work_min * 60
-            self.ringer.say("Focus time")
+            self._pomo_cue("Focus time")
         elif rt.phase == "long_break":
             self.pomodoro_rt = PomodoroRuntime()
-            self.ringer.say("Pomodoro finished")
+            self._pomo_cue("Pomodoro finished")
             self._flash("POMO DONE")
             if self.screen == "pomodoro":
                 self._goto("clock")
@@ -619,7 +647,7 @@ class Controller:
                     if self.screen not in ("alarm_ringing", "snoozing"):
                         self.edit = None
                         self._goto("timer_done")
-                    self.ringer.start("timer")
+                    self.ringer.start("timer", song_path=self._song_path(self.timer.song_id))
 
     # ------------------------------------------------------------------- API
 
@@ -646,17 +674,25 @@ class Controller:
             self.pomodoro.update(data)
             self._save()
 
-    def api_set_timer_duration(self, value) -> None:
-        duration = validate_timer_duration(value)
+    def api_update_timer(self, data) -> None:
+        _require(isinstance(data, dict), "timer settings must be an object")
+        duration = validate_timer_duration(data.get("durationSec"))
+        has_song = "songId" in data
+        song_id = _opt_song_id(data["songId"]) if has_song else None
         with self._lock:
             if self.timer.status == "done":
                 self.ringer.stop()
             self.timer.duration_sec = duration
             self.timer.remaining_sec = duration
             self.timer.status = "idle"
+            if has_song:
+                self.timer.song_id = song_id
             if self.screen in ("timer", "timer_done"):
                 self._goto("clock")
             self._save()
+
+    def api_set_timer_duration(self, value) -> None:
+        self.api_update_timer({"durationSec": value})
 
     def api_set_volume(self, value) -> None:
         volume = validate_volume(value)
@@ -724,6 +760,10 @@ class Controller:
             for alarm in self.alarms:
                 if alarm.song_id == song_id:
                     alarm.song_id = None
+            if self.pomodoro.song_id == song_id:
+                self.pomodoro.song_id = None
+            if self.timer.song_id == song_id:
+                self.timer.song_id = None
             self._save()
             return self._songs.list_songs()
 

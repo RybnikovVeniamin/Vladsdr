@@ -52,6 +52,12 @@ class FakeRinger:
     def say(self, text: str) -> None:
         self.events.append(f"say:{text}")
 
+    def notify(self, text: str, *, song_path=None) -> None:
+        if song_path:
+            self.events.append(f"notify:{song_path}")
+        else:
+            self.events.append(f"say:{text}")
+
     def set_volume(self, volume: int) -> None:
         self.events.append(f"volume:{volume}")
 
@@ -92,7 +98,11 @@ def test_defaults():
     expect(len(snap["alarms"]) == 1, "one default alarm")
     expect(snap["alarms"][0]["hour"] == 7 and snap["alarms"][0]["minute"] == 30, "default 07:30")
     expect(snap["device"]["screen"] == "clock", "starts on clock")
-    expect(snap["pomodoro"] == {"workMin": 25, "breakMin": 5, "longBreakMin": 15, "rounds": 4}, "pomodoro defaults")
+    expect(
+        snap["pomodoro"]
+        == {"workMin": 25, "breakMin": 5, "longBreakMin": 15, "rounds": 4, "songId": None},
+        "pomodoro defaults",
+    )
     expect(snap["volume"] == 80, "default volume 80%")
     json.dumps(snap)
     expect(True, "snapshot is JSON serializable")
@@ -362,8 +372,9 @@ def test_persistence_roundtrip():
     controller.api_set_alarms(
         [{"id": "keep", "hour": 6, "minute": 45, "repeatDays": WEEKDAYS, "enabled": False}]
     )
-    controller.api_update_pomodoro({"workMin": 50})
-    controller.api_set_timer_duration(90)
+    controller.api_upsert_song("song-p", "Cue", "vlad", b"RIFF", "cue.wav")
+    controller.api_update_pomodoro({"workMin": 50, "songId": "song-p"})
+    controller.api_update_timer({"durationSec": 90, "songId": "song-p"})
     controller.api_set_volume(45)
     reloaded, _, ringer, _ = make(datetime(2026, 7, 2, 12, 0, 0), state_file=state_file)
     snap = reloaded.snapshot()
@@ -371,7 +382,9 @@ def test_persistence_roundtrip():
         {"id": "keep", "enabled": False, "hour": 6, "minute": 45, "repeatDays": WEEKDAYS, "songId": None}
     ], "alarms survive restart")
     expect(snap["pomodoro"]["workMin"] == 50, "pomodoro settings survive restart")
+    expect(snap["pomodoro"]["songId"] == "song-p", "pomodoro song survives restart")
     expect(snap["timer"]["durationSec"] == 90, "timer duration survives restart")
+    expect(snap["timer"]["songId"] == "song-p", "timer song survives restart")
     expect(snap["volume"] == 45, "volume survives restart")
     expect("volume:45" in ringer.events, "ringer volume restored on load")
 
@@ -408,6 +421,37 @@ def test_alarm_song_playback():
     path = controller.api_song_audio_path("song-1")
     expect(path is not None, "song file stored")
     expect(any(str(path) in event for event in ringer.events if event.startswith("start:alarm")), "alarm rings with song file")
+
+
+def test_timer_pomodoro_song_playback():
+    print("timer + pomodoro custom sound")
+    controller, clock, ringer, _ = make(datetime(2026, 7, 2, 12, 0, 0))
+    controller.api_upsert_song("song-t", "Chime", "vlad", b"RIFF", "chime.wav")
+
+    # Timer rings with the chosen song file.
+    controller.api_update_timer({"durationSec": 1, "songId": "song-t"})
+    controller.api_start_timer()
+    advance(controller, clock, 1)
+    path = controller.api_song_audio_path("song-t")
+    expect(
+        any(str(path) in e for e in ringer.events if e.startswith("start:timer")),
+        "timer rings with song file",
+    )
+
+    # Pomodoro phase change uses the chosen song via notify.
+    controller.api_update_pomodoro({"workMin": 1, "breakMin": 1, "rounds": 2, "songId": "song-t"})
+    controller.api_start_pomodoro()
+    advance(controller, clock, 60)
+    expect(
+        any(str(path) in e for e in ringer.events if e.startswith("notify:")),
+        "pomodoro cue plays song file",
+    )
+
+    # Deleting the song clears both references.
+    controller.api_delete_song("song-t")
+    snap = controller.snapshot()
+    expect(snap["timer"]["songId"] is None, "deleted song cleared from timer")
+    expect(snap["pomodoro"]["songId"] is None, "deleted song cleared from pomodoro")
 
 
 def test_song_api():
@@ -513,6 +557,7 @@ def main() -> int:
         test_api_validation,
         test_api_ring_control,
         test_alarm_song_playback,
+        test_timer_pomodoro_song_playback,
         test_song_api,
         test_appearance_api,
         test_persistence_roundtrip,

@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DeviceRuntimeCard } from '@/components/web/DeviceRuntimeCard'
+import { SongPickerCard } from '@/components/web/SongPickerCard'
 import { Stepper } from '@/components/web/Stepper'
 import { VolumeControl } from '@/components/web/VolumeControl'
 import { POMODORO_PRESETS } from '@/data/presets'
@@ -22,6 +23,7 @@ export function PomodoroPage() {
   const pomodoro = useAppStore((s) => s.pomodoro)
   const runtime = useAppStore((s) => s.pomodoroRuntime)
   const updateSettings = useAppStore((s) => s.updatePomodoroSettings)
+  const setPomodoroSong = useAppStore((s) => s.setPomodoroSong)
   const startPomodoro = useAppStore((s) => s.startPomodoro)
   const pausePomodoro = useAppStore((s) => s.pausePomodoro)
   const stopPomodoro = useAppStore((s) => s.stopPomodoro)
@@ -146,6 +148,13 @@ export function PomodoroPage() {
           )}
         </CardContent>
       </Card>
+
+      <SongPickerCard
+        title="Session sound"
+        emptyLabel="Default cue (spoken)"
+        selectedId={pomodoro.songId ?? null}
+        onSelect={(songId) => setPomodoroSong(songId)}
+      />
     </div>
   )
 }

@@ -113,6 +113,26 @@ class Ringer:
             stderr=subprocess.DEVNULL,
         )
 
+    def notify(self, text: str, *, song_path: Path | str | None = None) -> None:
+        """One-shot cue: play the given song once if present, else speak `text`.
+
+        Used for pomodoro phase changes — fire-and-forget, does not loop and
+        does not disturb an active alarm/timer ring.
+        """
+        if not self._enabled:
+            print(f"[sound] {text}")
+            return
+        path = Path(song_path) if song_path else None
+        if path and path.is_file():
+            cmd = _player_cmd(path, self._volume)
+            if cmd:
+                try:
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return
+                except OSError:
+                    pass
+        self.say(text)
+
     def start(self, kind: str, *, song_path: Path | str | None = None) -> None:
         with self._lock:
             self._stop_locked()

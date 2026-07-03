@@ -66,7 +66,7 @@ def create_app(controller, webroot: Path | None = None) -> Flask:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise ValueError("body must be a JSON object")
-        controller.api_set_timer_duration(data.get("durationSec"))
+        controller.api_update_timer(data)
         return state()
 
     @app.put("/api/volume")

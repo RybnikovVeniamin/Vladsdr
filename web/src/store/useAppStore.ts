@@ -41,7 +41,9 @@ interface AppStore {
   updateAlarm: (id: string, patch: Partial<Omit<Alarm, 'id'>>) => void
   deleteAlarm: (id: string) => void
   updatePomodoroSettings: (settings: Partial<PomodoroSettings>) => void
+  setPomodoroSong: (songId: string | null) => void
   setTimerDuration: (durationSec: number) => void
+  setTimerSong: (songId: string | null) => void
   setVolume: (volume: number) => void
 
   addSong: (name: string, category: SongCategory, blobUrl: string) => string
@@ -104,7 +106,7 @@ function initialDevice(): DeviceState {
 }
 
 function initialTimer(): TimerState {
-  return { durationSec: 5 * 60, remainingSec: 5 * 60, status: 'idle' }
+  return { durationSec: 5 * 60, remainingSec: 5 * 60, status: 'idle', songId: null }
 }
 
 function defaultAlarms(): Alarm[] {
@@ -154,7 +156,7 @@ export const useAppStore = create<AppStore>()(
       avatars: defaultAvatars(),
       backgroundImage: null,
       appearanceVersions: defaultAppearanceVersions(),
-      pomodoro: { workMin: 25, breakMin: 5, longBreakMin: 15, rounds: 4 },
+      pomodoro: { workMin: 25, breakMin: 5, longBreakMin: 15, rounds: 4, songId: null },
       pomodoroRuntime: { ...defaultPomodoroRuntime },
       timer: initialTimer(),
       volume: 80,
@@ -211,6 +213,9 @@ export const useAppStore = create<AppStore>()(
       updatePomodoroSettings: (settings) =>
         set((s) => ({ pomodoro: { ...s.pomodoro, ...settings } })),
 
+      setPomodoroSong: (songId) =>
+        set((s) => ({ pomodoro: { ...s.pomodoro, songId } })),
+
       setTimerDuration: (durationSec) =>
         set((s) => ({
           timer: {
@@ -220,6 +225,9 @@ export const useAppStore = create<AppStore>()(
             status: 'idle',
           },
         })),
+
+      setTimerSong: (songId) =>
+        set((s) => ({ timer: { ...s.timer, songId } })),
 
       setVolume: (volume) =>
         set({ volume: clampInt(volume, 0, 100, 80) }),
@@ -246,6 +254,8 @@ export const useAppStore = create<AppStore>()(
           alarms: s.alarms.map((alarm) =>
             alarm.songId === id ? { ...alarm, songId: null } : alarm,
           ),
+          pomodoro: s.pomodoro.songId === id ? { ...s.pomodoro, songId: null } : s.pomodoro,
+          timer: s.timer.songId === id ? { ...s.timer, songId: null } : s.timer,
         })),
 
       setAvatar: (person, dataUrl) =>
@@ -511,7 +521,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'vlad-brodyaga-store',
-      version: 6,
+      version: 7,
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Record<string, unknown>
         if (!Array.isArray(p.alarms) && p.alarm && typeof p.alarm === 'object') {
@@ -542,6 +552,14 @@ export const useAppStore = create<AppStore>()(
         if (version < 6 && !p.appearanceVersions) {
           p.appearanceVersions = defaultAppearanceVersions()
         }
+        if (version < 7) {
+          if (p.pomodoro && typeof p.pomodoro === 'object') {
+            ;(p.pomodoro as Record<string, unknown>).songId ??= null
+          }
+          if (p.timer && typeof p.timer === 'object') {
+            ;(p.timer as Record<string, unknown>).songId ??= null
+          }
+        }
         return p as unknown as PersistedStore
       },
       merge: (persisted, current) => {
@@ -565,9 +583,18 @@ export const useAppStore = create<AppStore>()(
               ? saved.backgroundImage
               : current.backgroundImage,
           appearanceVersions: saved.appearanceVersions ?? current.appearanceVersions,
-          pomodoro: { ...current.pomodoro, ...saved.pomodoro },
+          pomodoro: {
+            ...current.pomodoro,
+            ...saved.pomodoro,
+            songId: saved.pomodoro?.songId ?? null,
+          },
           volume: clampInt(saved.volume, 0, 100, current.volume),
-          timer: { durationSec, remainingSec: durationSec, status: 'idle' },
+          timer: {
+            durationSec,
+            remainingSec: durationSec,
+            status: 'idle',
+            songId: saved.timer?.songId ?? null,
+          },
         }
       },
       partialize: (s): PersistedStore => ({
@@ -582,6 +609,7 @@ export const useAppStore = create<AppStore>()(
           durationSec: s.timer.durationSec,
           remainingSec: s.timer.durationSec,
           status: 'idle' as RunStatus,
+          songId: s.timer.songId ?? null,
         },
       }),
     },

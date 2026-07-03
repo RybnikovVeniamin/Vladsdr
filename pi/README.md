@@ -113,8 +113,8 @@ with `{"error": "..."}`.
 | GET | `/api/health` | — | ping |
 | GET | `/api/state` | — | full snapshot |
 | PUT | `/api/alarms` | `[{id?, enabled, hour, minute, repeatDays[7], songId?}]` | replace alarm list |
-| PUT | `/api/pomodoro` | `{workMin?, breakMin?, longBreakMin?, rounds?}` | update settings |
-| PUT | `/api/timer` | `{durationSec}` | set duration (resets timer) |
+| PUT | `/api/pomodoro` | `{workMin?, breakMin?, longBreakMin?, rounds?, songId?}` | update settings |
+| PUT | `/api/timer` | `{durationSec, songId?}` | set duration + sound (resets timer) |
 | POST | `/api/pomodoro/start` | optional settings | start session (device screen follows) |
 | POST | `/api/pomodoro/pause` | — | pause/resume |
 | POST | `/api/pomodoro/stop` | — | stop session |
@@ -126,7 +126,7 @@ with `{"error": "..."}`.
 | POST | `/api/alarm/dismiss` | — | turn off |
 | GET | `/api/songs` | — | list wake-up songs |
 | POST | `/api/songs` | multipart: `id`, `name`, `category`, `file` | upload/replace a song |
-| DELETE | `/api/songs/<id>` | — | delete song (clears it from alarms) |
+| DELETE | `/api/songs/<id>` | — | delete song (clears it from alarms, timer, pomodoro) |
 | GET | `/api/songs/<id>/audio` | — | stream the audio file |
 
 `repeatDays` index 0 = Sunday … 6 = Saturday (same as the web app).

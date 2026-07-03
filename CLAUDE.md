@@ -222,9 +222,9 @@ Settings persist in browser **localStorage**. See `web/README.md` for details.
 | Tab | Features |
 |-----|----------|
 | **Alarm** | **List of alarms** (add/delete/toggle) — per alarm: time, repeat days (weekday/weekend presets), song (Vlad / Karina cards). Device connection card with remote snooze / turn off |
-| **Pomodoro** | Presets (Classic/Deep/Quick) + custom work/break/long-break/rounds; run locally or **start on the device** |
-| **Timer** | Presets (1–30 min) + custom minutes **and seconds**; run locally or on the device |
-| **Upload** | Add custom alarm sounds (stored in browser; not on the Pi yet) |
+| **Pomodoro** | Presets (Classic/Deep/Quick) + custom work/break/long-break/rounds; custom session sound (Vlad/Karina cards); run locally or **start on the device** |
+| **Timer** | Presets (1–30 min) + custom minutes **and seconds**; custom finish sound; run locally or on the device |
+| **Upload** | Add custom sounds — usable for alarm, timer **and** pomodoro (stored in browser) |
 | **Device preview** | Simulates OLED screens: clock (next alarm), menu, ringing (red=off / knob=snooze), snooze, pomodoro, timer |
 
 The device simulator shares state with the settings app via Zustand — open both URLs to configure on one side and see the “device” react on the other.
