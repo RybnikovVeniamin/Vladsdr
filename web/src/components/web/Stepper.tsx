@@ -3,7 +3,7 @@ import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, glassSurfaceSubtle } from '@/lib/utils'
 
 interface StepperProps {
   label: string
@@ -56,7 +56,7 @@ export function Stepper({
     <div
       className={cn(
         'flex items-center justify-between gap-4',
-        compact ? 'gap-2' : 'rounded-lg border p-4',
+        compact ? 'gap-2' : cn('rounded-lg border p-4', glassSurfaceSubtle),
       )}
     >
       {!hideLabel && (

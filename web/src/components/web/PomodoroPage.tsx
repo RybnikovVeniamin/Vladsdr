@@ -43,7 +43,7 @@ export function PomodoroPage() {
     <div className="mx-auto flex max-w-lg flex-col gap-4">
       <DeviceRuntimeCard mode="pomodoro" />
       {isActive && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="border-primary/30 bg-primary/15">
           <CardContent className="flex flex-col items-center gap-2 py-8">
             <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               {runtime.phase === 'work'

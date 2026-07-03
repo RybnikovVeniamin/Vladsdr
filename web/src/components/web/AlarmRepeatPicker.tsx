@@ -9,7 +9,7 @@ import {
   normalizeRepeatDays,
   repeatPresetFromDays,
 } from '@/lib/alarmRepeat'
-import { cn } from '@/lib/utils'
+import { cn, glassSurfaceSubtle } from '@/lib/utils'
 
 interface AlarmRepeatPickerProps {
   repeatDays: boolean[]
@@ -53,7 +53,10 @@ export function AlarmRepeatPicker({ repeatDays, onChange }: AlarmRepeatPickerPro
                 'flex size-10 items-center justify-center rounded-full border text-sm font-medium transition-colors',
                 selected
                   ? 'border-foreground bg-foreground text-background'
-                  : 'border-input bg-background text-muted-foreground hover:bg-muted',
+                  : cn(
+                      'text-muted-foreground hover:bg-white/50',
+                      glassSurfaceSubtle,
+                    ),
               )}
             >
               {label}

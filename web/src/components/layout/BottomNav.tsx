@@ -1,5 +1,5 @@
 import { AlarmClock, Clock, Timer, Upload } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, glassPanel, glassBorder } from '@/lib/utils'
 import type { Tab } from '@/types'
 
 const tabs: { id: Tab; label: string; icon: typeof AlarmClock }[] = [
@@ -19,7 +19,9 @@ export function BottomNav({ active, onChange, className }: BottomNavProps) {
   return (
     <nav
       className={cn(
-        'fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+        'fixed inset-x-0 bottom-0 z-50 border-t',
+        glassPanel,
+        glassBorder,
         className,
       )}
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}

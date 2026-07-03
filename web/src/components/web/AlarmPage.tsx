@@ -20,6 +20,7 @@ import { PersonCard } from '@/components/web/PersonCard'
 import { SongList } from '@/components/web/SongList'
 import { formatRepeatSummary, normalizeRepeatDays } from '@/lib/alarmRepeat'
 import { formatClock, songsForCategory } from '@/lib/format'
+import { cn, glassSurfaceSubtle } from '@/lib/utils'
 import { useSongPreview } from '@/hooks/useSongPreview'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -161,7 +162,10 @@ export function AlarmPage() {
                     toast.success('Alarm time saved')
                   }
                 }}
-                className="h-12 w-full rounded-md border border-input bg-background px-3 text-lg"
+                className={cn(
+                  'h-12 w-full rounded-md border border-input px-3 text-lg',
+                  glassSurfaceSubtle,
+                )}
               />
             </div>
             <AlarmRepeatPicker
@@ -180,7 +184,7 @@ export function AlarmPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {selectedSong ? (
-              <div className="flex items-center gap-3 rounded-lg border p-3">
+              <div className={cn('flex items-center gap-3 rounded-lg border p-3', glassSurfaceSubtle)}>
                 <Music className="size-5 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{selectedSong.name}</p>

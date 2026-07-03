@@ -22,7 +22,7 @@ export function TimerPage() {
       <DeviceRuntimeCard mode="timer" />
 
       {isActive && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="border-primary/30 bg-primary/15">
           <CardContent className="flex flex-col items-center gap-2 py-8">
             <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Timer{timer.status === 'paused' ? ' · paused' : ''}

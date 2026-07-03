@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store/useAppStore'
 import { useDeviceSync } from '@/hooks/useDeviceSync'
+import { AppBackground } from '@/components/layout/AppBackground'
 import { MobileShell } from '@/components/layout/MobileShell'
 import { AlarmPage } from '@/components/web/AlarmPage'
 import { PomodoroPage } from '@/components/web/PomodoroPage'
@@ -29,8 +30,11 @@ export default function App() {
   useDeviceSync()
 
   return (
-    <MobileShell activeTab={activeTab} onTabChange={setActiveTab}>
-      <MainContent />
-    </MobileShell>
+    <>
+      <AppBackground />
+      <MobileShell activeTab={activeTab} onTabChange={setActiveTab}>
+        <MainContent />
+      </MobileShell>
+    </>
   )
 }

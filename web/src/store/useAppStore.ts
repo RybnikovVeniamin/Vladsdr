@@ -26,6 +26,7 @@ interface AppStore {
   alarms: Alarm[]
   songs: Song[]
   avatars: PersonAvatars
+  backgroundImage: string | null
   pomodoro: PomodoroSettings
   pomodoroRuntime: PomodoroRuntime
   timer: TimerState
@@ -43,6 +44,7 @@ interface AppStore {
   addSong: (name: string, category: SongCategory, blobUrl: string) => void
   deleteSong: (id: string) => void
   setAvatar: (person: PersonId, dataUrl: string | null) => void
+  setBackgroundImage: (dataUrl: string | null) => void
 
   startPomodoro: () => void
   pausePomodoro: () => void
@@ -65,6 +67,7 @@ interface PersistedStore {
   alarms: Alarm[]
   songs: Song[]
   avatars: PersonAvatars
+  backgroundImage: string | null
   pomodoro: PomodoroSettings
   timer: TimerState
 }
@@ -139,6 +142,7 @@ export const useAppStore = create<AppStore>()(
       alarms: defaultAlarms(),
       songs: seedSongs,
       avatars: defaultAvatars(),
+      backgroundImage: null,
       pomodoro: { workMin: 25, breakMin: 5, longBreakMin: 15, rounds: 4 },
       pomodoroRuntime: { ...defaultPomodoroRuntime },
       timer: initialTimer(),
@@ -230,6 +234,8 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({
           avatars: { ...s.avatars, [person]: dataUrl },
         })),
+
+      setBackgroundImage: (dataUrl) => set({ backgroundImage: dataUrl }),
 
       startPomodoro: () => {
         const { pomodoro } = get()
@@ -485,7 +491,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'vlad-brodyaga-store',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Record<string, unknown>
         if (!Array.isArray(p.alarms) && p.alarm && typeof p.alarm === 'object') {
@@ -496,6 +502,9 @@ export const useAppStore = create<AppStore>()(
         delete p.pomodoroRuntime
         if (version < 2 && !p.avatars) {
           p.avatars = defaultAvatars()
+        }
+        if (version < 3 && p.backgroundImage === undefined) {
+          p.backgroundImage = null
         }
         return p as unknown as PersistedStore
       },
@@ -515,6 +524,10 @@ export const useAppStore = create<AppStore>()(
           alarms,
           songs: Array.isArray(saved.songs) ? saved.songs : current.songs,
           avatars: saved.avatars ?? current.avatars,
+          backgroundImage:
+            saved.backgroundImage !== undefined
+              ? saved.backgroundImage
+              : current.backgroundImage,
           pomodoro: { ...current.pomodoro, ...saved.pomodoro },
           timer: { durationSec, remainingSec: durationSec, status: 'idle' },
         }
@@ -523,6 +536,7 @@ export const useAppStore = create<AppStore>()(
         alarms: s.alarms,
         songs: s.songs,
         avatars: s.avatars,
+        backgroundImage: s.backgroundImage,
         pomodoro: s.pomodoro,
         timer: {
           durationSec: s.timer.durationSec,

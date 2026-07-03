@@ -1,14 +1,9 @@
-import { cn } from '@/lib/utils'
+import { cn, glassPanel, glassBorder } from '@/lib/utils'
 import type { Tab } from '@/types'
 import { DevicePreviewLink } from '@/components/device/DevicePreviewLink'
 import { BottomNav } from '@/components/layout/BottomNav'
 
-const titles: Record<Tab, string> = {
-  alarm: 'Alarm',
-  pomodoro: 'Pomodoro',
-  timer: 'Timer',
-  upload: 'Upload sounds',
-}
+const PAGE_TITLE = 'Влад вставай у тебя будильник хуярит'
 
 interface MobileShellProps {
   activeTab: Tab
@@ -25,9 +20,15 @@ export function MobileShell({
 }: MobileShellProps) {
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-40 border-b bg-background/95 px-4 py-3 backdrop-blur">
+      <header
+        className={cn(
+          'sticky top-0 z-40 border-b px-4 py-3',
+          glassPanel,
+          glassBorder,
+        )}
+      >
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold">{titles[activeTab]}</h1>
+          <h1 className="text-lg font-semibold">{PAGE_TITLE}</h1>
           <DevicePreviewLink compact />
         </div>
       </header>

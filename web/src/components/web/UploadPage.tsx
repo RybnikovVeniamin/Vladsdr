@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Trash2, Upload as UploadIcon } from 'lucide-react'
+import { ImageIcon, Trash2, Upload as UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/select'
 import { PersonAvatar } from '@/components/web/PersonAvatar'
 import { readImageAsAvatarDataUrl } from '@/lib/imageAvatar'
+import { readImageAsBackgroundDataUrl } from '@/lib/imageBackground'
+import { cn, glassSurfaceSubtle } from '@/lib/utils'
 import type { PersonId, SongCategory } from '@/types'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -35,12 +37,15 @@ const PROFILE_PEOPLE: { id: PersonId; name: string }[] = [
 export function UploadPage() {
   const songs = useAppStore((s) => s.songs)
   const avatars = useAppStore((s) => s.avatars)
+  const backgroundImage = useAppStore((s) => s.backgroundImage)
   const addSong = useAppStore((s) => s.addSong)
   const deleteSong = useAppStore((s) => s.deleteSong)
   const setAvatar = useAppStore((s) => s.setAvatar)
+  const setBackgroundImage = useAppStore((s) => s.setBackgroundImage)
 
   const fileRef = useRef<HTMLInputElement>(null)
   const avatarFileRef = useRef<HTMLInputElement>(null)
+  const backgroundFileRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState('')
   const [category, setCategory] = useState<SongCategory>('both')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
@@ -98,10 +103,80 @@ export function UploadPage() {
     }
   }
 
+  const onBackgroundFile = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const dataUrl = await readImageAsBackgroundDataUrl(file)
+      setBackgroundImage(dataUrl)
+      toast.success('Background photo updated')
+    } catch {
+      toast.error('Please pick a photo (JPG, PNG, etc.)')
+    } finally {
+      if (backgroundFileRef.current) backgroundFileRef.current.value = ''
+    }
+  }
+
   const uploaded = songs.filter((s) => !s.id.startsWith('seed-'))
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">App background</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            Pick a photo that shows behind every screen in the app.
+          </p>
+          <button
+            type="button"
+            onClick={() => backgroundFileRef.current?.click()}
+            className={cn(
+              'relative flex min-h-36 w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border-2 border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground transition-colors hover:bg-white/60',
+              glassSurfaceSubtle,
+            )}
+          >
+            {backgroundImage ? (
+              <>
+                <img
+                  src={backgroundImage}
+                  alt="Current app background"
+                  className="absolute inset-0 size-full object-cover opacity-60"
+                />
+                <span className="relative z-10 rounded-md bg-background/80 px-3 py-1.5 font-medium text-foreground">
+                  Tap to change photo
+                </span>
+              </>
+            ) : (
+              <>
+                <ImageIcon className="size-8" />
+                Tap to choose a background photo
+              </>
+            )}
+          </button>
+          <input
+            ref={backgroundFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => onBackgroundFile(e.target.files?.[0])}
+          />
+          {backgroundImage && (
+            <Button
+              variant="ghost"
+              className="min-h-10 text-destructive"
+              onClick={() => {
+                setBackgroundImage(null)
+                toast.success('Background photo removed')
+              }}
+            >
+              <Trash2 className="size-4" />
+              Remove background
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Profile photos</CardTitle>
@@ -113,7 +188,7 @@ export function UploadPage() {
           {PROFILE_PEOPLE.map((person) => (
             <div
               key={person.id}
-              className="flex items-center gap-3 rounded-lg border p-3"
+              className={cn('flex items-center gap-3 rounded-lg border p-3', glassSurfaceSubtle)}
             >
               <PersonAvatar name={person.name} avatarUrl={avatars[person.id]} />
               <div className="min-w-0 flex-1">
@@ -163,7 +238,10 @@ export function UploadPage() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-4 text-sm text-muted-foreground transition-colors hover:bg-muted/50"
+            className={cn(
+              'flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 p-4 text-sm text-muted-foreground transition-colors hover:bg-white/60',
+              glassSurfaceSubtle,
+            )}
           >
             <UploadIcon className="size-8" />
             {pendingFile ? pendingFile.name : 'Tap to choose audio file'}
@@ -225,7 +303,7 @@ export function UploadPage() {
                 {uploaded.map((song) => (
                   <div
                     key={song.id}
-                    className="flex items-center gap-3 rounded-lg border p-3"
+                    className={cn('flex items-center gap-3 rounded-lg border p-3', glassSurfaceSubtle)}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{song.name}</p>
